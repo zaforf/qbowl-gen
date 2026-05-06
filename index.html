@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>qbowl-gen</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background-color: #111; color: #eee; font-family: ui-sans-serif, system-ui, sans-serif; }
+        .buzz-btn { transition: transform 0.1s active; }
+        .buzz-btn:active { transform: scale(0.95); }
+    </style>
+</head>
+<body class="h-screen flex flex-col items-center justify-center p-4">
+    <div id="game-container" class="w-full max-w-md text-center space-y-8">
+        <div id="status" class="text-xl font-medium text-gray-400">Connecting...</div>
+        
+        <div id="clue-area" class="text-2xl font-semibold min-h-[100px] leading-relaxed">
+            Waiting for game to start...
+        </div>
+
+        <button id="buzz-btn" class="buzz-btn w-48 h-48 rounded-full bg-red-600 hover:bg-red-500 text-white text-4xl font-black shadow-2xl border-8 border-red-800 uppercase tracking-tighter">
+            BUZZ
+        </button>
+
+        <div id="winner-display" class="text-3xl font-bold text-yellow-400 hidden"></div>
+        
+        <button id="reset-btn" class="text-sm text-gray-500 underline opacity-50 hover:opacity-100">Reset Buzzer (Debug)</button>
+    </div>
+
+    <script>
+        const clientId = "Player_" + Math.floor(Math.random() * 1000);
+        const statusEl = document.getElementById('status');
+        const clueEl = document.getElementById('clue-area');
+        const buzzBtn = document.getElementById('buzz-btn');
+        const winnerEl = document.getElementById('winner-display');
+        const resetBtn = document.getElementById('reset-btn');
+
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${clientId}`);
+
+        ws.onopen = () => {
+            statusEl.innerText = `Connected as ${clientId}`;
+        };
+
+        ws.onmessage = (event) => {
+            const msg = JSON.parse(event.data);
+            
+            if (msg.type === 'lock') {
+                clueEl.innerText = "LOCKED!";
+                winnerEl.innerText = `Winner: ${msg.winner}`;
+                winnerEl.classList.remove('hidden');
+                buzzBtn.disabled = true;
+                buzzBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            } else if (msg.type === 'reset') {
+                clueEl.innerText = "Waiting for game to start...";
+                winnerEl.classList.add('hidden');
+                buzzBtn.disabled = false;
+                buzzBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            } else if (msg.type === 'error') {
+                alert(msg.message);
+            }
+        };
+
+        buzzBtn.onclick = () => {
+            ws.send(JSON.stringify({ type: 'buzz' }));
+        };
+
+        resetBtn.onclick = () => {
+            ws.send(JSON.stringify({ type: 'reset' }));
+        };
+
+        ws.onclose = () => {
+            statusEl.innerText = "Disconnected from server";
+            buzzBtn.disabled = true;
+        };
+    </script>
+</body>
+</html>
