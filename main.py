@@ -1,15 +1,91 @@
+import os
+import json
+import asyncio
+from typing import List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-from typing import List
-import json
+import google.generativeai as genai
 
-app = FastAPI()
+# --- Configuration ---
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY_HERE")
+genai.configure(api_key=GEMINI_API_KEY)
+
+SYSTEM_PROMPT = """
+You are the "AI Qbreader," an expert Quizbowl Game Master and Clue Writer. Your goal is to create intellectually stimulating, factually accurate, and properly "pyramided" clues.
+
+### CORE CONCEPT: PYRAMIDING
+A pyramidal clue starts with the most obscure, difficult information and progresses toward the most common, easy information.
+
+Structure of a clue:
+1. The Lead-In (Difficult): 2-3 sentences of highly specific, niche, or technical facts.
+2. The Bridge (Medium): 2-3 sentences of facts known to enthusiasts.
+3. The Giveaway (Easy): 1-2 sentences of iconic, widely known facts.
+
+### OPERATIONAL MODES
+
+#### MODE: GENERATE
+When asked to generate a clue for a [TOPIC]:
+- DO NOT mention the answer within the clue text.
+- Maintain a strict difficulty gradient (Hard -> Medium -> Easy).
+- Output the result in the following format:
+  ANSWER: [The precise answer]
+  CLUE: [The full pyramidal text]
+
+#### MODE: VALIDATE
+When provided with an [ANSWER], a [USER_GUESS], and a [CLUE]:
+- Determine if the USER_GUESS is correct.
+- Be "Quizbowl Lenient": Accept common synonyms or slightly incomplete but unambiguous names.
+- Output only:
+  RESULT: [CORRECT/INCORRECT]
+  FEEDBACK: [Briefly explain why or "Perfect!"]
+
+### CONSTRAINTS
+- Factuality is paramount. Do not hallucinate.
+- No "filler" phrases like "This person was...". Start directly with the facts.
+- Ensure the "Giveaway" is at the very end.
+"""
+
+class Brain:
+    def __init__(self):
+        self.model = genai.GenerativeModel(
+            model_name="gemini-3.1-flash", # Using 1.5 Flash for speed
+            system_instruction=SYSTEM_PROMPT
+        )
+
+    async def generate_clue(self, topic: str):
+        prompt = f"MODE: GENERATE | TOPIC: {topic}"
+        response = self.model.generate_content(prompt)
+        text = response.text
+        
+        # Parsing logic
+        try:
+            answer_part = text.split("ANSWER:")[1].split("CLUE:")[0].strip()
+            clue_part = text.split("CLUE:")[1].strip()
+            return answer_part, clue_part
+        except IndexError:
+            print(f"Parsing error. Raw response: {text}")
+            return "Error", "Could not parse clue."
+
+    async def validate_answer(self, answer: str, guess: str, clue: str):
+        prompt = f"MODE: VALIDATE | ANSWER: {answer} | USER_GUESS: {guess} | CLUE: {clue}"
+        response = self.model.generate_content(prompt)
+        text = response.text
+        
+        try:
+            result = text.split("RESULT:")[1].split("FEEDBACK:")[0].strip()
+            feedback = text.split("FEEDBACK:")[1].strip()
+            return result == "CORRECT", feedback
+        except IndexError:
+            return False, "Validation error."
 
 class GameState:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
         self.buzzer_locked = False
         self.winner = None
+        self.current_answer = None
+        self.current_clue = None
+        self.streaming_task: Optional[asyncio.Task] = None
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -20,13 +96,23 @@ class GameState:
 
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
-            await connection.send_text(json.dumps(message))
+            try:
+                await connection.send_text(json.dumps(message))
+            except:
+                pass
 
     def reset_buzzer(self):
         self.buzzer_locked = False
         self.winner = None
 
+    async def stop_streaming(self):
+        if self.streaming_task:
+            self.streaming_task.cancel()
+            self.streaming_task = None
+
 game = GameState()
+brain = Brain()
+app = FastAPI()
 
 @app.get("/")
 async def get():
@@ -41,13 +127,38 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             data = await websocket.receive_text()
             message = json.loads(data)
             
-            if message.get("type") == "buzz":
+            if message.get("type") == "start":
+                topic = message.get("topic", "General Knowledge")
+                await game.stop_streaming()
+                game.reset_buzzer()
+                
+                # Start streaming clue as a background task
+                game.streaming_task = asyncio.create_task(stream_clue(client_id, topic))
+            
+            elif message.get("type") == "buzz":
                 if not game.buzzer_locked:
                     game.buzzer_locked = True
                     game.winner = client_id
                     await game.broadcast({"type": "lock", "winner": client_id})
+                    # Stop the clue stream immediately
+                    await game.stop_streaming()
                 else:
                     await websocket.send_text(json.dumps({"type": "error", "message": "Too late!"}))
+            
+            elif message.get("type") == "submit_answer":
+                if game.winner == client_id:
+                    guess = message.get("guess", "")
+                    is_correct, feedback = await brain.validate_answer(
+                        game.current_answer, guess, game.current_clue
+                    )
+                    await game.broadcast({
+                        "type": "reveal", 
+                        "correct": is_correct, 
+                        "answer": game.current_answer, 
+                        "feedback": feedback,
+                        "winner": client_id
+                    })
+                    game.reset_buzzer()
             
             elif message.get("type") == "reset":
                 game.reset_buzzer()
@@ -55,6 +166,31 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 
     except WebSocketDisconnect:
         game.disconnect(websocket)
+
+async def stream_clue(client_id: str, topic: str):
+    try:
+        answer, clue = await brain.generate_clue(topic)
+        game.current_answer = answer
+        game.current_clue = clue
+        
+        # Split by sentences for a better "streaming" effect
+        sentences = clue.split(". ")
+        for sentence in sentences:
+            if game.buzzer_locked:
+                break
+            # Add back the period if it was removed by split
+            s = sentence.strip()
+            if s and not s.endswith("."):
+                s += "."
+            
+            await game.broadcast({"type": "clue_chunk", "text": s})
+            await asyncio.sleep(2.5) # Adjust for tension
+            
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        print(f"Error streaming clue: {e}")
+        await game.broadcast({"type": "error", "message": "AI failed to generate clue."})
 
 if __name__ == "__main__":
     import uvicorn
