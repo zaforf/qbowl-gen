@@ -6,9 +6,16 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # --- Configuration ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY_HERE")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    raise ValueError("GEMINI_API_KEY not found in environment variables")
+
 client = genai.Client(api_key=GEMINI_API_KEY)
 MODEL_ID = "gemini-3.1-flash"
 
@@ -50,7 +57,6 @@ When provided with an [ANSWER], a [USER_GUESS], and a [CLUE]:
 class Brain:
     async def generate_clue(self, topic: str):
         prompt = f"MODE: GENERATE | TOPIC: {topic}"
-        # New SDK uses a config object for system instructions
         response = client.models.generate_content(
             model=MODEL_ID,
             contents=prompt,
