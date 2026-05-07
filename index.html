@@ -65,7 +65,7 @@
         button.primary { background: #e5e5e5; color: #111; border-color: #e5e5e5; font-weight: 600; }
         button.primary:hover { background: #fff; }
         #clue-area {
-            flex: 1;
+            flex: 0 0 auto;
             background: #111;
             border: 1px solid #1e1e1e;
             border-radius: 6px;
@@ -74,7 +74,7 @@
             line-height: 1.75;
             color: #e0e0e0;
             overflow-y: auto;
-            min-height: 160px;
+            max-height: 30vh;
             transition: border-color 0.3s ease, box-shadow 0.3s ease;
         }
         #clue-area.locked { border-color: #5a1e1e; box-shadow: 0 0 20px rgba(90, 30, 30, 0.2); }
@@ -84,22 +84,39 @@
         .clue-word { transition: color 0.3s ease, opacity 0.3s ease; }
         .clue-unread { color: #333 !important; }
 
-        #reveal-banner {
+        #game-log {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            overflow-y: auto;
+            padding-bottom: 20px;
+        }
+        .log-entry {
             background: #161616;
             border: 1px solid #222;
-            border-radius: 5px;
+            border-radius: 6px;
             padding: 10px 14px;
-            display: flex;
-            align-items: baseline;
-            gap: 10px;
-            animation: slideUp 0.3s ease-out;
+            font-size: 13px;
+            animation: slideUp 0.2s ease-out;
         }
-        @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
-        .answer-label { font-size: 11px; color: #444; }
-        #reveal-answer { font-size: 15px; font-weight: 600; color: #fff; }
-        #reveal-answer.correct { color: #4ade80; }
-        #reveal-answer.incorrect { color: #f87171; }
-        #reveal-feedback { font-size: 12px; color: #555; margin-left: auto; }
+        @keyframes slideUp { from { transform: translateY(5px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+        .log-type { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+        .type-start { color: #3b82f6; }
+        .type-lock { color: #ef4444; }
+        .type-reveal { color: #fbbf24; }
+        .type-error { color: #f87171; }
+        .log-content { color: #aaa; }
+        .log-entry.expandable { cursor: pointer; }
+        .log-entry.expandable:hover { background: #1c1c1c; }
+        .expanded-clue {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #222;
+            font-size: 15px;
+            line-height: 1.6;
+            color: #e0e0e0;
+        }
         #answer-section {
             display: flex;
             gap: 8px;
@@ -172,11 +189,7 @@
 
     <div id="clue-area">enter a topic and press start</div>
 
-    <div id="reveal-banner" class="hidden">
-        <span class="answer-label">answer</span>
-        <span id="reveal-answer"></span>
-        <span id="reveal-feedback"></span>
-    </div>
+    <div id="game-log"></div>
 
     <div id="answer-section" class="hidden">
         <input id="answer-input" type="text" placeholder="your answer...">
@@ -214,9 +227,7 @@
     const answerSection = document.getElementById('answer-section');
     const answerInput   = document.getElementById('answer-input');
     const submitBtn     = document.getElementById('submit-btn');
-    const revealBanner  = document.getElementById('reveal-banner');
-    const revealAnswer  = document.getElementById('reveal-answer');
-    const revealFeedback= document.getElementById('reveal-feedback');
+    const gameLog       = document.getElementById('game-log');
     const resetBtn      = document.getElementById('reset-btn');
     const scoreboardEl  = document.getElementById('scoreboard');
     const timerBar      = document.getElementById('timer-bar');
@@ -252,6 +263,9 @@
             clueEl.className = 'locked';
             nextBtn.classList.add('hidden');
             statusEl.textContent = `buzzed: ${msg.winner}`;
+            
+            appendLogEntry('lock', `Player ${msg.winner} buzzed!`);
+            
             if (isBuzzer) {
                 answerSection.classList.remove('hidden');
                 answerInput.focus();
@@ -272,11 +286,19 @@
                 clueEl.appendChild(span);
             });
 
-            revealAnswer.textContent = msg.answer;
-            revealAnswer.className = msg.correct ? 'correct' : 'incorrect';
-            revealFeedback.textContent = msg.feedback;
-            revealBanner.classList.remove('hidden');
-            answerSection.classList.add('hidden');
+            // Add to log with expandable clue
+            const resultText = msg.correct ? 'Correct!' : `Wrong. Answer: ${msg.answer}`;
+            const logEntry = appendLogEntry('reveal', `${msg.winner} answered: ${msg.guess || '...'} → ${resultText}`);
+            
+            const clueDiv = document.createElement('div');
+            clueDiv.className = 'expanded-clue hidden';
+            clueDiv.innerHTML = `<strong>Full Clue:</strong><br>${msg.full_clue}`;
+            logEntry.appendChild(clueDiv);
+            logEntry.classList.add('expandable');
+            logEntry.onclick = () => {
+                clueDiv.classList.toggle('hidden');
+            };
+
             nextBtn.classList.remove('hidden');
             statusEl.textContent = msg.correct ? '✓ correct' : '✗ incorrect';
             
@@ -293,8 +315,32 @@
                 startBtn.classList.remove('hidden');
                 nextBtn.classList.add('hidden');
             }
+        } else if (msg.type === 'question_dead') {
+            state = 'dead';
+            statusEl.textContent = 'Question dead.';
+            nextBtn.classList.remove('hidden');
+            buzzPrompt.classList.add('hidden');
         }
     };
+
+    function appendLogEntry(type, text) {
+        const entry = document.createElement('div');
+        entry.className = 'log-entry';
+        
+        const typeSpan = document.createElement('div');
+        typeSpan.className = `log-type type-${type}`;
+        typeSpan.textContent = type;
+        
+        const contentSpan = document.createElement('div');
+        contentSpan.className = 'log-content';
+        contentSpan.textContent = text;
+        
+        entry.appendChild(typeSpan);
+        entry.appendChild(contentSpan);
+        gameLog.appendChild(entry);
+        gameLog.scrollTop = gameLog.scrollHeight;
+        return entry;
+    }
 
     function setClue(text, cls = '') {
         clueEl.textContent = text;
@@ -336,7 +382,7 @@
         state = 'idle';
         isBuzzer = false;
         setClue('enter a topic and press start', 'placeholder');
-        revealBanner.classList.add('hidden');
+        gameLog.innerHTML = '';
         answerSection.classList.add('hidden');
         nextBtn.classList.add('hidden');
         startBtn.classList.remove('hidden');
@@ -350,7 +396,7 @@
         ws.send(JSON.stringify({ type: 'start', topic }));
         state = 'loading';
         setClue('', 'placeholder');
-        revealBanner.classList.add('hidden');
+        gameLog.innerHTML = '';
         answerSection.classList.add('hidden');
         nextBtn.classList.add('hidden');
         startBtn.classList.add('hidden');
@@ -360,7 +406,6 @@
         ws.send(JSON.stringify({ type: 'next' }));
         state = 'loading';
         setClue('', '');
-        revealBanner.classList.add('hidden');
         nextBtn.classList.add('hidden');
         answerSection.classList.add('hidden');
     }
