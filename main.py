@@ -4,11 +4,13 @@ import asyncio
 from typing import List, Optional
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # --- Configuration ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "YOUR_API_KEY_HERE")
-genai.configure(api_key=GEMINI_API_KEY)
+client = genai.Client(api_key=GEMINI_API_KEY)
+MODEL_ID = "gemini-3.1-flash"
 
 SYSTEM_PROMPT = """
 You are the "AI Qbreader," an expert Quizbowl Game Master and Clue Writer. Your goal is to create intellectually stimulating, factually accurate, and properly "pyramided" clues.
@@ -46,18 +48,18 @@ When provided with an [ANSWER], a [USER_GUESS], and a [CLUE]:
 """
 
 class Brain:
-    def __init__(self):
-        self.model = genai.GenerativeModel(
-            model_name="gemini-3.1-flash", # Using 1.5 Flash for speed
-            system_instruction=SYSTEM_PROMPT
-        )
-
     async def generate_clue(self, topic: str):
         prompt = f"MODE: GENERATE | TOPIC: {topic}"
-        response = self.model.generate_content(prompt)
+        # New SDK uses a config object for system instructions
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT
+            )
+        )
         text = response.text
         
-        # Parsing logic
         try:
             answer_part = text.split("ANSWER:")[1].split("CLUE:")[0].strip()
             clue_part = text.split("CLUE:")[1].strip()
@@ -68,7 +70,13 @@ class Brain:
 
     async def validate_answer(self, answer: str, guess: str, clue: str):
         prompt = f"MODE: VALIDATE | ANSWER: {answer} | USER_GUESS: {guess} | CLUE: {clue}"
-        response = self.model.generate_content(prompt)
+        response = client.models.generate_content(
+            model=MODEL_ID,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_PROMPT
+            )
+        )
         text = response.text
         
         try:
@@ -132,7 +140,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await game.stop_streaming()
                 game.reset_buzzer()
                 
-                # Start streaming clue as a background task
                 game.streaming_task = asyncio.create_task(stream_clue(client_id, topic))
             
             elif message.get("type") == "buzz":
@@ -140,7 +147,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     game.buzzer_locked = True
                     game.winner = client_id
                     await game.broadcast({"type": "lock", "winner": client_id})
-                    # Stop the clue stream immediately
                     await game.stop_streaming()
                 else:
                     await websocket.send_text(json.dumps({"type": "error", "message": "Too late!"}))
@@ -173,18 +179,16 @@ async def stream_clue(client_id: str, topic: str):
         game.current_answer = answer
         game.current_clue = clue
         
-        # Split by sentences for a better "streaming" effect
         sentences = clue.split(". ")
         for sentence in sentences:
             if game.buzzer_locked:
                 break
-            # Add back the period if it was removed by split
             s = sentence.strip()
             if s and not s.endswith("."):
                 s += "."
             
             await game.broadcast({"type": "clue_chunk", "text": s})
-            await asyncio.sleep(2.5) # Adjust for tension
+            await asyncio.sleep(2.5)
             
     except asyncio.CancelledError:
         pass
