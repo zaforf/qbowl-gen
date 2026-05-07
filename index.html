@@ -4,604 +4,1038 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>qbowl-gen</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
+        :root {
+            --bg:        #fbfaf7;   /* warm paper */
+            --panel:     #ffffff;
+            --ink:       #18181b;   /* primary text */
+            --ink-2:     #52525b;   /* secondary */
+            --ink-3:     #a1a1aa;   /* muted */
+            --rule:      #e7e5e4;
+            --rule-2:    #f4f4f0;
+            --accent:    #1f2937;   /* near-black for primary buttons */
+            --accent-fg: #ffffff;
+            --good:      #15803d;
+            --bad:       #b91c1c;
+            --warn:      #b45309;
+
+            --font-ui:    'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            --font-read:  'Source Serif 4', 'Charter', 'Georgia', serif;
+            --font-mono:  'JetBrains Mono', ui-monospace, Menlo, monospace;
+        }
+
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        /* Minimal scrollbars to match dark theme */
-        * { scrollbar-width: thin; scrollbar-color: #1e1e1e transparent; }
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        /* Scrollbars match paper theme */
+        * { scrollbar-width: thin; scrollbar-color: #d4d4d4 transparent; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
-        ::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 2px; }
-        ::-webkit-scrollbar-thumb:hover { background: #2e2e2e; }
+        ::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
 
         body {
-            background: #0f0f0f;
-            color: #d0d0d0;
-            font-family: system-ui, -apple-system, 'Segoe UI', sans-serif;
-            font-size: 13px;
+            background: var(--bg);
+            color: var(--ink);
+            font-family: var(--font-ui);
+            font-size: 14px;
+            font-feature-settings: "ss01", "cv11";
+            line-height: 1.5;
             height: 100vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
         }
 
         /* ── Header ── */
-        #header {
-            height: 38px;
+        header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 0 16px;
-            border-bottom: 1px solid #181818;
+            padding: 14px 28px;
+            border-bottom: 1px solid var(--rule);
             flex-shrink: 0;
+            background: var(--bg);
         }
-        .logo { font-weight: 700; font-size: 13px; color: #fff; letter-spacing: -0.03em; }
-        #header-right { display: flex; align-items: center; gap: 12px; }
-        #player-id { font-family: monospace; font-size: 11px; color: #333; }
-
-        /* ── Inputs ── */
-        input[type=text] {
-            background: #141414;
-            border: 1px solid #1e1e1e;
-            color: #d0d0d0;
-            padding: 6px 10px;
-            border-radius: 4px;
+        .brand {
+            font-weight: 700;
+            font-size: 15px;
+            letter-spacing: -0.02em;
+        }
+        .brand .dot { color: var(--bad); }
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 18px;
             font-size: 13px;
+            color: var(--ink-2);
+        }
+        .header-right .me {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--ink);
+        }
+        .header-right .online {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .online-dot {
+            width: 7px; height: 7px;
+            background: var(--good);
+            border-radius: 50%;
+        }
+
+        /* ── Layout ── */
+        .layout {
+            flex: 1;
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) 320px;
+            gap: 0;
+            overflow: hidden;
+            max-width: 1280px;
+            width: 100%;
+            margin: 0 auto;
+        }
+
+        /* ── Main column ── */
+        main {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding: 28px 36px;
+            gap: 22px;
+            border-right: 1px solid var(--rule);
+        }
+
+        /* ── Topic / controls ── */
+        .controls {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .controls label {
+            font-size: 12px;
+            color: var(--ink-3);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 600;
+        }
+        .input {
+            background: var(--panel);
+            border: 1px solid var(--rule);
+            color: var(--ink);
+            padding: 9px 12px;
+            border-radius: 6px;
+            font-size: 14px;
             font-family: inherit;
             outline: none;
+            transition: border-color 100ms;
         }
-        input[type=text]:focus { border-color: #2e2e2e; }
-        input[type=text]::placeholder { color: #282828; }
+        .input:focus { border-color: var(--ink-2); }
+        .input::placeholder { color: var(--ink-3); }
+        .input.flex { flex: 1; }
 
         /* ── Buttons ── */
-        button {
-            background: #141414;
-            border: 1px solid #1e1e1e;
-            color: #777;
-            padding: 6px 13px;
-            border-radius: 4px;
-            font-size: 12px;
+        .btn {
+            background: var(--panel);
+            border: 1px solid var(--rule);
+            color: var(--ink);
+            padding: 9px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
             font-family: inherit;
             cursor: pointer;
             white-space: nowrap;
-            transition: background 80ms, color 80ms, border-color 80ms;
+            transition: background 100ms, border-color 100ms;
         }
-        button:hover { background: #1a1a1a; color: #bbb; border-color: #282828; }
-        button.primary { background: #e8e8e8; color: #111; border-color: #e8e8e8; font-weight: 600; }
-        button.primary:hover { background: #fff; }
-        #buzz-btn {
-            flex: 1;
-            padding: 9px;
-            font-size: 12px;
-            font-weight: 600;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            color: #555;
-            border-color: #1e1e1e;
+        .btn:hover { background: #f8f7f3; border-color: var(--ink-3); }
+        .btn-primary {
+            background: var(--accent);
+            color: var(--accent-fg);
+            border-color: var(--accent);
         }
-        #buzz-btn:hover { color: #aaa; border-color: #2e2e2e; }
-        #reset-btn { font-size: 11px; color: #2e2e2e; border-color: transparent; background: none; }
-        #reset-btn:hover { color: #666; background: none; }
+        .btn-primary:hover { background: #000; border-color: #000; }
+        .btn-ghost {
+            border-color: transparent;
+            color: var(--ink-2);
+            background: transparent;
+        }
+        .btn-ghost:hover { color: var(--ink); background: var(--rule-2); }
 
-        /* ── Controls ── */
-        #controls {
+        /* ── Question card ── */
+        .question {
+            flex: 1;
             display: flex;
-            gap: 8px;
-            padding: 9px 16px;
-            border-bottom: 1px solid #181818;
-            flex-shrink: 0;
-        }
-        #topic-input { flex: 1; }
-
-        /* ── Event log (newest at top, near clue area) ── */
-        #event-log {
-            flex-shrink: 0;
-            max-height: 88px;
-            overflow-y: auto;
-            border-bottom: 1px solid #181818;
-        }
-        .ev-entry {
-            padding: 5px 16px;
-            font-size: 11px;
-            line-height: 1.35;
-            color: #383838;
-            border-bottom: 1px solid #141414;
-        }
-        .ev-entry:last-child { border-bottom: none; }
-        .ev-entry.clickable:hover { background: #141414; cursor: pointer; }
-        .ev-player { color: #555; font-weight: 600; }
-        .ev-answer { font-style: italic; }
-        .ev-correct  .ev-tag { color: #4ade80; }
-        .ev-wrong    .ev-tag { color: #fb923c; }
-        .ev-dead     .ev-tag { color: #fbbf24; }
-        .ev-lock     .ev-tag { color: #f87171; }
-        .ev-expanded {
-            margin-top: 5px;
-            padding-top: 5px;
-            border-top: 1px solid #1a1a1a;
-            color: #444;
-            font-size: 11px;
-            line-height: 1.5;
-        }
-
-        /* ── Clue area ── */
-        #clue-area {
-            flex: 1;
-            padding: 22px 24px;
-            font-size: 15px;
-            line-height: 1.85;
-            color: #d8d8d8;
-            overflow-y: auto;
+            flex-direction: column;
+            background: var(--panel);
+            border: 1px solid var(--rule);
+            border-radius: 10px;
+            overflow: hidden;
             min-height: 0;
         }
-        #clue-area.ph { color: #282828; font-size: 13px; font-style: italic; }
-        .cw { } /* read word */
-        .cu { color: #252525; } /* unread word */
-
-        /* ── Timer bar ── */
-        #timer-bar {
-            height: 2px;
-            background: #f59e0b;
-            width: 0%;
-            transition: width 0.1s linear;
-            flex-shrink: 0;
-        }
-
-        /* ── Action row ── */
-        #action-row {
-            border-top: 1px solid #181818;
-            padding: 10px 16px;
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            flex-shrink: 0;
-            min-height: 46px;
-        }
-        #waiting-msg { font-size: 12px; color: #383838; font-style: italic; }
-        #answer-input { flex: 1; }
-
-        /* ── Scores ── */
-        #scores-row {
-            border-top: 1px solid #181818;
-            padding: 6px 16px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 14px;
-            font-family: monospace;
-            font-size: 11px;
-            flex-shrink: 0;
-            min-height: 26px;
-            align-items: center;
-        }
-        .sc-item { display: flex; gap: 5px; align-items: baseline; }
-        .sc-name { color: #333; }
-        .sc-val { font-weight: 700; color: #555; }
-        .sc-val.p { color: #4ade80; }
-        .sc-val.n { color: #f87171; }
-
-        /* ── Footer ── */
-        #footer {
-            border-top: 1px solid #181818;
-            padding: 5px 16px;
+        .q-header {
             display: flex;
             align-items: center;
             justify-content: space-between;
+            padding: 14px 24px;
+            border-bottom: 1px solid var(--rule-2);
+            font-size: 12px;
+            color: var(--ink-3);
+            font-weight: 500;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
             flex-shrink: 0;
         }
-        .hints { display: flex; gap: 12px; color: #222; font-size: 11px; }
-        .hints span { display: flex; align-items: center; gap: 3px; }
-        kbd {
-            background: #141414;
-            border: 1px solid #1e1e1e;
-            padding: 1px 4px;
-            border-radius: 3px;
-            font-size: 10px;
-            font-family: monospace;
-            color: #2e2e2e;
+        .q-meta { font-family: var(--font-mono); font-size: 11px; }
+        .q-state-pill {
+            font-size: 11px;
+            padding: 3px 9px;
+            border-radius: 999px;
+            background: var(--rule-2);
+            color: var(--ink-2);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            font-weight: 600;
         }
-        #status { font-size: 11px; font-family: monospace; color: #2e2e2e; }
+        .q-state-pill.reading  { background: #ecfccb; color: #3f6212; }
+        .q-state-pill.locked   { background: #fee2e2; color: #991b1b; }
+        .q-state-pill.revealed { background: #dcfce7; color: #166534; }
+        .q-state-pill.dead     { background: #fef3c7; color: #92400e; }
+
+        .q-body {
+            flex: 1;
+            overflow-y: auto;
+            padding: 28px 28px 24px;
+            font-family: var(--font-read);
+            font-size: 18px;
+            line-height: 1.7;
+            color: var(--ink);
+            min-height: 0;
+        }
+        .q-body.placeholder {
+            color: var(--ink-3);
+            font-size: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        .word-read   { color: var(--ink); }
+        .word-unread { color: #d4d4d4; }
+
+        .q-footer {
+            border-top: 1px solid var(--rule-2);
+            padding: 14px 16px;
+            background: #fcfbf8;
+            flex-shrink: 0;
+        }
+
+        /* ── Action zone (lives inside .q-footer) ── */
+        .action {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        .action .input { flex: 1; font-size: 15px; }
+        .buzz-btn {
+            flex: 1;
+            padding: 11px;
+            font-size: 14px;
+            font-weight: 600;
+            background: var(--accent);
+            color: var(--accent-fg);
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            cursor: pointer;
+            font-family: inherit;
+            letter-spacing: 0.02em;
+            transition: background 80ms;
+        }
+        .buzz-btn:hover { background: #000; }
+        .buzz-btn .kbd-hint {
+            margin-left: 8px;
+            font-weight: 400;
+            font-size: 12px;
+            opacity: 0.6;
+        }
+        .waiting {
+            font-size: 14px;
+            color: var(--ink-2);
+            padding: 10px 0;
+        }
+        .waiting strong { color: var(--ink); font-weight: 600; }
+        .private-feedback {
+            margin-top: 10px;
+            padding: 10px 14px;
+            background: #fef2f2;
+            border: 1px solid #fecaca;
+            border-radius: 6px;
+            color: #991b1b;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .private-feedback .pf-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+            color: #b91c1c;
+            margin-bottom: 3px;
+            display: block;
+        }
+        .reveal-banner {
+            margin-top: 10px;
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+        .reveal-banner.correct {
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
+            color: #14532d;
+        }
+        .reveal-banner.dead {
+            background: #fffbeb;
+            border: 1px solid #fde68a;
+            color: #78350f;
+        }
+        .reveal-banner .rb-label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 700;
+            color: var(--ink-3);
+            margin-right: 8px;
+        }
+        .reveal-banner strong { font-weight: 600; }
+
+        /* ── Timer bar ── */
+        .timer-track {
+            height: 3px;
+            background: var(--rule-2);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 10px;
+        }
+        .timer-fill {
+            height: 100%;
+            background: var(--warn);
+            width: 0%;
+            transition: width 100ms linear;
+        }
+
+        /* ── Sidebar ── */
+        aside {
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg);
+        }
+        .panel {
+            padding: 22px 24px;
+        }
+        .panel + .panel { border-top: 1px solid var(--rule); }
+        .panel-title {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--ink-3);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 700;
+            margin-bottom: 14px;
+        }
+        .panel-title .count {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--ink-3);
+        }
+
+        /* Players */
+        .players {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .player-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 0;
+            font-size: 13px;
+        }
+        .player-name {
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--ink);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+        .player-name.me::after {
+            content: 'you';
+            margin-left: 6px;
+            font-size: 10px;
+            color: var(--ink-3);
+            font-family: var(--font-ui);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            font-weight: 600;
+        }
+        .player-score {
+            font-family: var(--font-mono);
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--ink-2);
+            margin-left: 12px;
+        }
+        .player-score.pos { color: var(--good); }
+        .player-score.neg { color: var(--bad); }
+
+        /* Activity */
+        .activity {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            padding-bottom: 0;
+        }
+        .activity-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 0;
+            margin: 0 -24px;
+            padding: 0 24px 22px;
+        }
+        .ev {
+            padding: 10px 0;
+            border-bottom: 1px solid var(--rule-2);
+            font-size: 13px;
+            line-height: 1.45;
+            color: var(--ink-2);
+        }
+        .ev:last-child { border-bottom: none; }
+        .ev-tag {
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--ink-3);
+            display: block;
+            margin-bottom: 3px;
+        }
+        .ev .who { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
+        .ev .said {
+            display: inline;
+            color: var(--ink);
+        }
+        .ev.correct .ev-tag { color: var(--good); }
+        .ev.wrong   .ev-tag { color: var(--warn); }
+        .ev.dead    .ev-tag { color: var(--warn); }
+        .ev.lock    .ev-tag { color: var(--bad); }
+        .ev.join    .ev-tag { color: var(--ink-3); }
+        .ev .answer {
+            color: var(--ink);
+            font-weight: 600;
+        }
+        .ev.expandable { cursor: pointer; }
+        .ev.expandable:hover { background: var(--rule-2); margin: 0 -24px; padding: 10px 24px; }
+        .ev-expanded {
+            margin-top: 8px;
+            padding: 10px 12px;
+            background: var(--bg);
+            border-radius: 4px;
+            color: var(--ink-2);
+            font-family: var(--font-read);
+            font-size: 13px;
+            line-height: 1.6;
+        }
+
+        /* ── Footer hints ── */
+        .hints {
+            padding: 8px 28px;
+            border-top: 1px solid var(--rule);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--ink-3);
+            background: var(--bg);
+            flex-shrink: 0;
+            grid-column: 1 / -1;
+        }
+        .hints .keys { display: flex; gap: 14px; }
+        .hints .keys span { display: inline-flex; gap: 4px; align-items: center; }
+        kbd {
+            font-family: var(--font-mono);
+            font-size: 10px;
+            padding: 2px 5px;
+            border-radius: 3px;
+            background: var(--panel);
+            border: 1px solid var(--rule);
+            color: var(--ink-2);
+            font-weight: 500;
+        }
+        .status {
+            font-family: var(--font-mono);
+            font-size: 11px;
+            color: var(--ink-3);
+        }
 
         .hidden { display: none !important; }
+
+        /* Slim layout: hide sidebar on narrow screens */
+        @media (max-width: 900px) {
+            .layout { grid-template-columns: 1fr; }
+            aside { display: none; }
+            .hints { grid-column: 1; }
+        }
     </style>
 </head>
 <body>
 
-<div id="header">
-    <span class="logo">qbowl-gen</span>
-    <div id="header-right">
-        <span id="player-id"></span>
-        <button id="reset-btn">reset</button>
+<header>
+    <span class="brand">qbowl<span class="dot">·</span>gen</span>
+    <div class="header-right">
+        <span class="online"><span class="online-dot"></span><span id="online-count">1</span> online</span>
+        <span class="me" id="me-id">…</span>
+        <button class="btn btn-ghost" id="reset-btn">Reset</button>
     </div>
-</div>
+</header>
 
-<div id="controls">
-    <input id="topic-input" type="text" placeholder="topic — ancient rome, jazz, quantum mechanics...">
-    <button id="start-btn" class="primary">Start</button>
-    <button id="next-btn" class="hidden">Next →</button>
-</div>
+<div class="layout">
 
-<!-- Event log: newest prepended, so first child = most recent -->
-<div id="event-log"></div>
+    <main>
+        <div class="controls">
+            <input id="topic-input" class="input flex" type="text"
+                   placeholder="Topic — e.g. ancient rome, jazz, linear algebra">
+            <button id="start-btn" class="btn btn-primary">Start round</button>
+            <button id="next-btn" class="btn btn-primary hidden">Next →</button>
+        </div>
 
-<!-- Streaming clue text -->
-<div id="clue-area" class="ph">enter a topic above and press start</div>
+        <section class="question">
+            <div class="q-header">
+                <span class="q-meta" id="q-meta">— · —</span>
+                <span class="q-state-pill" id="q-state">idle</span>
+            </div>
 
-<div id="timer-bar"></div>
+            <div class="q-body placeholder" id="q-body">
+                Pick a topic and start a round to begin.
+            </div>
 
-<div id="action-row">
-    <button id="buzz-btn" class="hidden">BUZZ <span style="font-weight:400;font-size:10px;opacity:.45">· Space</span></button>
-    <span id="waiting-msg" class="hidden"></span>
-    <input id="answer-input" type="text" placeholder="your answer..." class="hidden">
-    <button id="submit-btn" class="primary hidden">Submit</button>
-</div>
+            <div class="q-footer">
+                <div class="action">
+                    <button id="buzz-btn" class="buzz-btn hidden">
+                        Buzz<span class="kbd-hint">Space</span>
+                    </button>
+                    <span id="waiting" class="waiting hidden"></span>
+                    <input id="answer-input" type="text" class="input hidden"
+                           placeholder="Your answer…" autocomplete="off">
+                    <button id="submit-btn" class="btn btn-primary hidden">Submit</button>
+                </div>
 
-<div id="scores-row" class="hidden"></div>
+                <div id="timer-track" class="timer-track hidden">
+                    <div id="timer-fill" class="timer-fill"></div>
+                </div>
 
-<div id="footer">
+                <div id="private-feedback" class="private-feedback hidden">
+                    <span class="pf-label">Judge</span>
+                    <span id="pf-text"></span>
+                </div>
+
+                <div id="reveal-banner" class="reveal-banner hidden">
+                    <span class="rb-label">Answer</span>
+                    <strong id="rb-answer"></strong>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <aside>
+        <div class="panel">
+            <div class="panel-title">Players <span class="count" id="players-count">0</span></div>
+            <div class="players" id="players-list">
+                <div class="ev-tag" style="color:var(--ink-3); font-weight:500; text-transform:none; letter-spacing:0; font-size:12px;">
+                    Connecting…
+                </div>
+            </div>
+        </div>
+
+        <div class="panel activity">
+            <div class="panel-title">Activity</div>
+            <div class="activity-list" id="activity-list"></div>
+        </div>
+    </aside>
+
     <div class="hints">
-        <span><kbd>Space</kbd> buzz</span>
-        <span><kbd>N</kbd> next</span>
-        <span><kbd>Enter</kbd> submit / start</span>
+        <div class="keys">
+            <span><kbd>Space</kbd> buzz</span>
+            <span><kbd>N</kbd> next question</span>
+            <span><kbd>Enter</kbd> submit · start</span>
+        </div>
+        <span class="status" id="status">connecting…</span>
     </div>
-    <span id="status"></span>
 </div>
 
 <script>
-    // ── State ─────────────────────────────────────────────────────
-    // idle | loading | reading | locked | revealed
-    let state    = 'idle';
-    let isBuzzer = false;
-    let wordsRead = 0;
-    let timerInterval = null;
+"use strict";
 
-    let clientId = localStorage.getItem('qb_cid');
-    if (!clientId) {
-        clientId = 'p_' + Math.random().toString(36).slice(2, 7);
-        localStorage.setItem('qb_cid', clientId);
+// ── State machine ────────────────────────────────────────────────
+// idle | loading | reading | locked | revealed
+let state = 'idle';
+let isBuzzer = false;
+let wordsRead = 0;
+let timerInterval = null;
+let questionNumber = 0;
+const players = new Map(); // id -> { score }
+
+const clientId = (() => {
+    let id = localStorage.getItem('qb_cid');
+    if (!id) {
+        id = 'p_' + Math.random().toString(36).slice(2, 7);
+        localStorage.setItem('qb_cid', id);
     }
-    document.getElementById('player-id').textContent = clientId;
+    return id;
+})();
 
-    // ── Elements ──────────────────────────────────────────────────
-    const statusEl    = document.getElementById('status');
-    const clueEl      = document.getElementById('clue-area');
-    const topicInput  = document.getElementById('topic-input');
-    const startBtn    = document.getElementById('start-btn');
-    const nextBtn     = document.getElementById('next-btn');
-    const buzzBtn     = document.getElementById('buzz-btn');
-    const waitingMsg  = document.getElementById('waiting-msg');
-    const answerInput = document.getElementById('answer-input');
-    const submitBtn   = document.getElementById('submit-btn');
-    const eventLog    = document.getElementById('event-log');
-    const scoresRow   = document.getElementById('scores-row');
-    const timerBar    = document.getElementById('timer-bar');
-    const resetBtn    = document.getElementById('reset-btn');
+// ── Element refs ─────────────────────────────────────────────────
+const $ = id => document.getElementById(id);
+const meId = $('me-id'); meId.textContent = clientId;
 
-    // ── WebSocket ─────────────────────────────────────────────────
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const ws = new WebSocket(`${proto}//${location.host}/ws/${clientId}`);
+const els = {
+    qBody: $('q-body'),
+    qMeta: $('q-meta'),
+    qState: $('q-state'),
+    topic: $('topic-input'),
+    startBtn: $('start-btn'),
+    nextBtn: $('next-btn'),
+    buzzBtn: $('buzz-btn'),
+    waiting: $('waiting'),
+    answer: $('answer-input'),
+    submitBtn: $('submit-btn'),
+    timerTrack: $('timer-track'),
+    timerFill: $('timer-fill'),
+    privateFb: $('private-feedback'),
+    pfText: $('pf-text'),
+    revealBanner: $('reveal-banner'),
+    rbAnswer: $('rb-answer'),
+    playersList: $('players-list'),
+    playersCount: $('players-count'),
+    onlineCount: $('online-count'),
+    activity: $('activity-list'),
+    resetBtn: $('reset-btn'),
+    status: $('status'),
+};
 
-    ws.onopen  = () => setStatus('ready');
-    ws.onclose = () => setStatus('disconnected');
+// ── WebSocket ────────────────────────────────────────────────────
+const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+const ws = new WebSocket(`${proto}//${location.host}/ws/${clientId}`);
+ws.onopen  = () => { setStatus('connected'); };
+ws.onclose = () => { setStatus('disconnected'); };
 
-    ws.onmessage = ({ data }) => {
-        const msg = JSON.parse(data);
+ws.onmessage = ({ data }) => {
+    const msg = JSON.parse(data);
 
-        switch (msg.type) {
+    switch (msg.type) {
 
-        case 'status':
-            setStatus(msg.text);
-            setClue(msg.text, 'ph');
-            break;
+    case 'status':
+        setStatus(msg.text);
+        if (state === 'loading') setPlaceholder(msg.text);
+        break;
 
-        case 'state_sync':
-            // Late-join catch-up: server sends current partial clue
-            if (!msg.partial_clue) break;
-            wordsRead = msg.words_read || 0;
-            state = msg.locked ? 'locked' : 'reading';
-            renderWords(msg.partial_clue.split(' '), 'cw');
-            clueEl.className = '';
-            if (msg.scores) renderScores(msg.scores);
-            if (msg.locked) {
-                setActionLocked(msg.winner);
-            } else {
-                buzzBtn.classList.remove('hidden');
-            }
-            break;
-
-        case 'clue_chunk':
-            if (state === 'idle') break; // stale post-reset chunks
-            if (state !== 'reading') {
-                // Fresh question starting
-                state = 'reading';
-                clueEl.textContent = '';
-                clueEl.className = '';
-                wordsRead = 0;
-                buzzBtn.classList.remove('hidden');
-            }
-            appendWord(msg.text);
-            wordsRead++;
-            break;
-
-        case 'lock':
-            state = 'locked';
-            isBuzzer = (msg.winner === clientId);
-            logEvent('lock',
-                `<span class="ev-tag">BUZZ</span> <span class="ev-player">${esc(msg.winner)}</span>`);
-            setStatus(`${msg.winner} buzzed`);
-            setActionLocked(msg.winner);
-            break;
-
-        case 'wrong_buzz':
-            state = 'reading';
-            isBuzzer = false;
-            stopTimer();
-            clueEl.className = '';
-            setActionReading();
-            logEvent('wrong',
-                `<span class="ev-tag">✗</span> <span class="ev-player">${esc(msg.guesser)}</span> said <span class="ev-answer">"${esc(msg.guess)}"</span> — ${esc(msg.feedback)}`);
-            setStatus('reading...');
-            if (msg.scores) renderScores(msg.scores);
-            break;
-
-        case 'reveal':
-            state = 'revealed';
-            isBuzzer = false;
-            stopTimer();
-            setActionRevealed();
-            renderReadUnread(msg.full_clue);
-            const revEntry = logEvent('correct',
-                `<span class="ev-tag">✓</span> <span class="ev-player">${esc(msg.winner)}</span> said <span class="ev-answer">"${esc(msg.guess)}"</span> — <strong>${esc(msg.answer)}</strong>`,
-                msg.full_clue);
-            setStatus(`✓ ${msg.answer}`);
-            if (msg.scores) renderScores(msg.scores);
-            break;
-
-        case 'question_dead':
-            state = 'revealed';
-            stopTimer();
-            setActionRevealed();
-            if (msg.full_clue) renderReadUnread(msg.full_clue);
-            logEvent('dead',
-                `<span class="ev-tag">—</span> No one got it. Answer: <strong>${esc(msg.answer)}</strong>`,
-                msg.full_clue);
-            setStatus(`— ${msg.answer}`);
-            break;
-
-        case 'reset':
-            resetUI();
-            break;
-
-        case 'player_joined':
-            logEvent('join',
-                `<span class="ev-player">${esc(msg.player)}</span> joined · ${msg.count} online`);
-            break;
-
-        case 'player_left':
-            logEvent('join',
-                `<span class="ev-player">${esc(msg.player)}</span> left · ${msg.count} online`);
-            break;
-
-        case 'error':
-            setStatus('⚠ ' + msg.message);
-            if (state === 'reading' || state === 'loading') {
-                state = 'idle';
-                setClue('error — try a new topic', 'ph');
-                startBtn.classList.remove('hidden');
-                nextBtn.classList.add('hidden');
-                buzzBtn.classList.add('hidden');
-            }
-            break;
-        }
-    };
-
-    // ── Clue rendering ────────────────────────────────────────────
-    function appendWord(word) {
-        const s = document.createElement('span');
-        s.className = 'cw';
-        s.textContent = (clueEl.children.length ? ' ' : '') + word;
-        clueEl.appendChild(s);
-        clueEl.scrollTop = clueEl.scrollHeight;
-    }
-
-    function renderWords(words, cls) {
-        clueEl.textContent = '';
-        words.forEach((w, i) => {
-            const s = document.createElement('span');
-            s.className = cls;
-            s.textContent = (i ? ' ' : '') + w;
-            clueEl.appendChild(s);
-        });
-    }
-
-    function renderReadUnread(fullClue) {
-        const words = fullClue.split(' ');
-        clueEl.textContent = '';
-        words.forEach((w, i) => {
-            const s = document.createElement('span');
-            s.className = i < wordsRead ? 'cw' : 'cu';
-            s.textContent = (i ? ' ' : '') + w;
-            clueEl.appendChild(s);
-        });
-    }
-
-    function setClue(text, cls) {
-        clueEl.textContent = text;
-        clueEl.className = cls || '';
-        wordsRead = 0;
-    }
-
-    // ── Action row states ─────────────────────────────────────────
-    function setActionReading() {
-        buzzBtn.classList.remove('hidden');
-        waitingMsg.classList.add('hidden');
-        answerInput.classList.add('hidden');
-        submitBtn.classList.add('hidden');
-    }
-
-    function setActionLocked(winner) {
-        buzzBtn.classList.add('hidden');
-        if (winner === clientId) {
-            waitingMsg.classList.add('hidden');
-            answerInput.classList.remove('hidden');
-            submitBtn.classList.remove('hidden');
-            answerInput.focus();
-            startTimer(10000);
-        } else {
-            waitingMsg.textContent = `${winner} is answering...`;
-            waitingMsg.classList.remove('hidden');
-            answerInput.classList.add('hidden');
-            submitBtn.classList.add('hidden');
-        }
-    }
-
-    function setActionRevealed() {
-        buzzBtn.classList.add('hidden');
-        waitingMsg.classList.add('hidden');
-        answerInput.classList.add('hidden');
-        submitBtn.classList.add('hidden');
-        nextBtn.classList.remove('hidden');
-    }
-
-    // ── Event log ─────────────────────────────────────────────────
-    function logEvent(type, html, expandClue) {
-        const el = document.createElement('div');
-        el.className = `ev-entry ev-${type}`;
-        el.innerHTML = html;
-        if (expandClue) {
-            el.classList.add('clickable');
-            const ex = document.createElement('div');
-            ex.className = 'ev-expanded hidden';
-            ex.textContent = expandClue;
-            el.appendChild(ex);
-            el.addEventListener('click', () => ex.classList.toggle('hidden'));
-        }
-        // Prepend so newest is at top
-        eventLog.insertBefore(el, eventLog.firstChild);
-        return el;
-    }
-
-    // ── Scores ────────────────────────────────────────────────────
-    function renderScores(scores) {
-        scoresRow.innerHTML = '';
-        scoresRow.classList.remove('hidden');
-        Object.entries(scores)
-            .sort((a, b) => b[1] - a[1])
-            .forEach(([id, sc]) => {
-                const d = document.createElement('div');
-                d.className = 'sc-item';
-                const cls = sc > 0 ? 'p' : sc < 0 ? 'n' : '';
-                d.innerHTML = `<span class="sc-name">${esc(id)}</span><span class="sc-val ${cls}">${sc > 0 ? '+' : ''}${sc}</span>`;
-                scoresRow.appendChild(d);
+    case 'state_sync':
+        // Populate online player list first, then their scores.
+        if (msg.players) {
+            msg.players.forEach(id => {
+                if (!players.has(id)) players.set(id, { score: 0 });
             });
-    }
+        }
+        if (msg.scores) ingestScores(msg.scores);
+        renderPlayers();
+        // Active game catch-up
+        if (!msg.partial_clue) break;
+        wordsRead = msg.words_read || 0;
+        state = msg.locked ? 'locked' : 'reading';
+        renderClue(msg.partial_clue.split(' '), 'word-read');
+        if (msg.locked) {
+            setActionLocked(msg.winner);
+            setQuestionState('locked');
+        } else {
+            setActionReading();
+            setQuestionState('reading');
+        }
+        break;
 
-    // ── Timer ─────────────────────────────────────────────────────
-    function startTimer(ms) {
-        stopTimer();
-        const t0 = Date.now();
-        timerInterval = setInterval(() => {
-            const pct = Math.min(((Date.now() - t0) / ms) * 100, 100);
-            timerBar.style.width = pct + '%';
-            if (pct >= 100) {
-                stopTimer();
-                ws.send(JSON.stringify({ type: 'submit_answer', guess: '' }));
-            }
-        }, 100);
-    }
+    case 'clue_chunk':
+        if (state === 'idle') break;       // stale post-reset
+        if (state !== 'reading') {
+            state = 'reading';
+            questionNumber += (questionNumber === 0 ? 1 : 0);
+            els.qBody.textContent = '';
+            els.qBody.classList.remove('placeholder');
+            wordsRead = 0;
+            setActionReading();
+            setQuestionState('reading');
+            hideRevealBanner();
+            hidePrivateFeedback();
+            els.qMeta.textContent = `Question ${questionNumber || 1}`;
+        }
+        appendWord(msg.text);
+        wordsRead++;
+        break;
 
-    function stopTimer() {
-        clearInterval(timerInterval);
-        timerInterval = null;
-        timerBar.style.width = '0%';
-    }
+    case 'lock':
+        state = 'locked';
+        isBuzzer = (msg.winner === clientId);
+        setQuestionState('locked');
+        setActionLocked(msg.winner);
+        addEvent('lock', 'BUZZ', `<span class="who">${esc(msg.winner)}</span> buzzed`);
+        setStatus(`${msg.winner} buzzed`);
+        break;
 
-    // ── Status ────────────────────────────────────────────────────
-    function setStatus(text) { statusEl.textContent = text; }
-
-    // ── XSS safety for player-controlled strings in innerHTML ─────
-    function esc(str) {
-        return String(str)
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
-
-    // ── Game actions ──────────────────────────────────────────────
-    function startGame() {
-        const topic = topicInput.value.trim() || 'General Knowledge';
-        ws.send(JSON.stringify({ type: 'start', topic }));
-        state = 'loading';
-        clueEl.textContent = '';
-        clueEl.className = '';
-        eventLog.innerHTML = '';
-        scoresRow.innerHTML = '';
-        scoresRow.classList.add('hidden');
-        startBtn.classList.add('hidden');
-        nextBtn.classList.add('hidden');
-        buzzBtn.classList.add('hidden');
-        answerInput.classList.add('hidden');
-        submitBtn.classList.add('hidden');
-        waitingMsg.classList.add('hidden');
-        wordsRead = 0;
-    }
-
-    function goNext() {
-        ws.send(JSON.stringify({ type: 'next' }));
-        state = 'loading';
-        clueEl.textContent = '';
-        clueEl.className = '';
-        nextBtn.classList.add('hidden');
-        buzzBtn.classList.add('hidden');
-        answerInput.classList.add('hidden');
-        submitBtn.classList.add('hidden');
-        waitingMsg.classList.add('hidden');
-        wordsRead = 0;
-    }
-
-    function buzz() {
-        if (state === 'reading') ws.send(JSON.stringify({ type: 'buzz' }));
-    }
-
-    function submitAnswer() {
-        const guess = answerInput.value.trim();
-        ws.send(JSON.stringify({ type: 'submit_answer', guess }));
-        answerInput.value = '';
-    }
-
-    function resetUI() {
-        state = 'idle';
+    case 'wrong_buzz':
+        // Public version has no feedback (server hides it from non-guessers).
+        state = 'reading';
+        const wasMe = (msg.guesser === clientId);
         isBuzzer = false;
-        wordsRead = 0;
         stopTimer();
-        setClue('enter a topic above and press start', 'ph');
-        eventLog.innerHTML = '';
-        scoresRow.innerHTML = '';
-        scoresRow.classList.add('hidden');
-        startBtn.classList.remove('hidden');
-        nextBtn.classList.add('hidden');
-        buzzBtn.classList.add('hidden');
-        answerInput.classList.add('hidden');
-        submitBtn.classList.add('hidden');
-        waitingMsg.classList.add('hidden');
-        setStatus('');
+        setActionReading();
+        setQuestionState('reading');
+        if (wasMe && msg.feedback) {
+            showPrivateFeedback(msg.feedback);
+        }
+        const guessHTML = msg.guess
+            ? `said <span class="answer">"${esc(msg.guess)}"</span>`
+            : `didn't answer`;
+        addEvent('wrong', 'WRONG',
+            `<span class="who">${esc(msg.guesser)}</span> ${guessHTML} — reading continues`);
+        if (msg.scores) ingestScores(msg.scores);
+        setStatus('reading…');
+        break;
+
+    case 'reveal':
+        state = 'revealed';
+        isBuzzer = false;
+        stopTimer();
+        setActionRevealed();
+        setQuestionState('revealed');
+        renderReadUnread(msg.full_clue);
+        showRevealBanner('correct', msg.answer);
+        addEvent('correct', 'CORRECT',
+            `<span class="who">${esc(msg.winner)}</span> said <span class="answer">"${esc(msg.guess)}"</span> · <strong>${esc(msg.answer)}</strong>`,
+            msg.full_clue);
+        setStatus(`✓ ${msg.answer}`);
+        if (msg.scores) ingestScores(msg.scores);
+        break;
+
+    case 'question_dead':
+        state = 'revealed';
+        stopTimer();
+        setActionRevealed();
+        setQuestionState('dead');
+        if (msg.full_clue) renderReadUnread(msg.full_clue);
+        showRevealBanner('dead', msg.answer);
+        addEvent('dead', 'DEAD',
+            `No correct buzz · <strong>${esc(msg.answer)}</strong>`,
+            msg.full_clue);
+        setStatus(`— ${msg.answer}`);
+        break;
+
+    case 'reset':
+        resetUI();
+        break;
+
+    case 'player_joined':
+        if (!players.has(msg.player)) players.set(msg.player, { score: 0 });
+        renderPlayers();
+        els.onlineCount.textContent = msg.count;
+        addEvent('join', 'JOIN', `<span class="who">${esc(msg.player)}</span> connected`);
+        break;
+
+    case 'player_left':
+        players.delete(msg.player);
+        renderPlayers();
+        els.onlineCount.textContent = msg.count;
+        addEvent('join', 'LEAVE', `<span class="who">${esc(msg.player)}</span> left`);
+        break;
+
+    case 'error':
+        setStatus('error: ' + msg.message);
+        if (state === 'reading' || state === 'loading') {
+            state = 'idle';
+            setPlaceholder('No more questions. Pick a new topic.');
+            setQuestionState('idle');
+            els.startBtn.classList.remove('hidden');
+            els.nextBtn.classList.add('hidden');
+            setActionIdle();
+        }
+        break;
     }
+};
 
-    // ── Event handlers ────────────────────────────────────────────
-    startBtn.onclick  = startGame;
-    nextBtn.onclick   = goNext;
-    buzzBtn.onclick   = buzz;
-    submitBtn.onclick = submitAnswer;
-    resetBtn.onclick  = () => ws.send(JSON.stringify({ type: 'reset' }));
+// ── Question text rendering ──────────────────────────────────────
+function appendWord(word) {
+    const s = document.createElement('span');
+    s.className = 'word-read';
+    s.textContent = (els.qBody.children.length ? ' ' : '') + word;
+    els.qBody.appendChild(s);
+    els.qBody.scrollTop = els.qBody.scrollHeight;
+}
 
-    topicInput.addEventListener('keydown',  e => { if (e.key === 'Enter') startGame(); });
-    answerInput.addEventListener('keydown', e => { if (e.key === 'Enter') submitAnswer(); });
-
-    window.addEventListener('keydown', e => {
-        if (document.activeElement.tagName === 'INPUT') return;
-        if (e.code === 'Space') { e.preventDefault(); buzz(); }
-        if (e.key.toLowerCase() === 'n' && state === 'revealed') goNext();
+function renderClue(words, cls) {
+    els.qBody.classList.remove('placeholder');
+    els.qBody.textContent = '';
+    words.forEach((w, i) => {
+        const s = document.createElement('span');
+        s.className = cls;
+        s.textContent = (i ? ' ' : '') + w;
+        els.qBody.appendChild(s);
     });
+}
+
+function renderReadUnread(fullClue) {
+    const words = fullClue.split(' ');
+    renderClue(words, 'word-unread'); // start all unread
+    // Then mark the first wordsRead as read
+    Array.from(els.qBody.children).forEach((span, i) => {
+        span.className = i < wordsRead ? 'word-read' : 'word-unread';
+    });
+}
+
+function setPlaceholder(text) {
+    els.qBody.textContent = text;
+    els.qBody.classList.add('placeholder');
+    wordsRead = 0;
+}
+
+// ── Question state pill ──────────────────────────────────────────
+function setQuestionState(s) {
+    els.qState.className = 'q-state-pill ' + s;
+    els.qState.textContent = s;
+}
+
+// ── Action zone modes ────────────────────────────────────────────
+function setActionIdle() {
+    els.buzzBtn.classList.add('hidden');
+    els.waiting.classList.add('hidden');
+    els.answer.classList.add('hidden');
+    els.submitBtn.classList.add('hidden');
+}
+function setActionReading() {
+    els.buzzBtn.classList.remove('hidden');
+    els.waiting.classList.add('hidden');
+    els.answer.classList.add('hidden');
+    els.submitBtn.classList.add('hidden');
+    els.timerTrack.classList.add('hidden');
+}
+function setActionLocked(winner) {
+    els.buzzBtn.classList.add('hidden');
+    if (winner === clientId) {
+        els.waiting.classList.add('hidden');
+        els.answer.classList.remove('hidden');
+        els.submitBtn.classList.remove('hidden');
+        els.answer.value = '';
+        els.answer.focus();
+        els.timerTrack.classList.remove('hidden');
+        startTimer(10000);
+    } else {
+        els.waiting.innerHTML = `<strong>${esc(winner)}</strong> is answering…`;
+        els.waiting.classList.remove('hidden');
+        els.answer.classList.add('hidden');
+        els.submitBtn.classList.add('hidden');
+        els.timerTrack.classList.add('hidden');
+    }
+}
+function setActionRevealed() {
+    els.buzzBtn.classList.add('hidden');
+    els.waiting.classList.add('hidden');
+    els.answer.classList.add('hidden');
+    els.submitBtn.classList.add('hidden');
+    els.timerTrack.classList.add('hidden');
+    els.nextBtn.classList.remove('hidden');
+}
+
+// ── Reveal banner ────────────────────────────────────────────────
+function showRevealBanner(kind, answer) {
+    els.revealBanner.className = 'reveal-banner ' + kind;
+    els.revealBanner.classList.remove('hidden');
+    els.rbAnswer.textContent = answer;
+}
+function hideRevealBanner() {
+    els.revealBanner.classList.add('hidden');
+}
+
+function showPrivateFeedback(text) {
+    els.pfText.textContent = text;
+    els.privateFb.classList.remove('hidden');
+}
+function hidePrivateFeedback() { els.privateFb.classList.add('hidden'); }
+
+// ── Activity log ─────────────────────────────────────────────────
+function addEvent(kind, tag, html, expandClue) {
+    const el = document.createElement('div');
+    el.className = 'ev ' + kind;
+    el.innerHTML = `<span class="ev-tag">${tag}</span><span class="ev-text">${html}</span>`;
+    if (expandClue) {
+        el.classList.add('expandable');
+        const ex = document.createElement('div');
+        ex.className = 'ev-expanded hidden';
+        ex.textContent = expandClue;
+        el.appendChild(ex);
+        el.addEventListener('click', () => ex.classList.toggle('hidden'));
+    }
+    els.activity.insertBefore(el, els.activity.firstChild); // newest at top
+}
+
+// ── Players + scores ─────────────────────────────────────────────
+function ingestScores(scores) {
+    // Only update scores for currently-online players.
+    Object.entries(scores).forEach(([id, score]) => {
+        if (players.has(id)) players.get(id).score = score;
+    });
+    renderPlayers();
+}
+
+function renderPlayers() {
+    els.playersCount.textContent = players.size;
+    els.playersList.innerHTML = '';
+    if (players.size === 0) {
+        els.playersList.innerHTML = '<div style="color:var(--ink-3);font-size:12px;">no players yet</div>';
+        return;
+    }
+    Array.from(players.entries())
+        .sort((a, b) => b[1].score - a[1].score)
+        .forEach(([id, { score }]) => {
+            const row = document.createElement('div');
+            row.className = 'player-row';
+            const cls = score > 0 ? 'pos' : score < 0 ? 'neg' : '';
+            const me = id === clientId ? ' me' : '';
+            row.innerHTML = `
+                <span class="player-name${me}">${esc(id)}</span>
+                <span class="player-score ${cls}">${score > 0 ? '+' : ''}${score}</span>`;
+            els.playersList.appendChild(row);
+        });
+}
+
+// ── Timer ────────────────────────────────────────────────────────
+function startTimer(ms) {
+    stopTimer();
+    const t0 = Date.now();
+    timerInterval = setInterval(() => {
+        const pct = Math.min(((Date.now() - t0) / ms) * 100, 100);
+        els.timerFill.style.width = pct + '%';
+        if (pct >= 100) {
+            stopTimer();
+            ws.send(JSON.stringify({ type: 'submit_answer', guess: '' }));
+        }
+    }, 100);
+}
+function stopTimer() {
+    clearInterval(timerInterval);
+    timerInterval = null;
+    els.timerFill.style.width = '0%';
+}
+
+// ── Status ───────────────────────────────────────────────────────
+function setStatus(text) { els.status.textContent = text; }
+
+// ── XSS helper ───────────────────────────────────────────────────
+function esc(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+        '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    })[c]);
+}
+
+// ── Game actions ─────────────────────────────────────────────────
+function startGame() {
+    const topic = els.topic.value.trim() || 'General Knowledge';
+    ws.send(JSON.stringify({ type: 'start', topic }));
+    state = 'loading';
+    questionNumber = 0;
+    els.qMeta.textContent = 'preparing…';
+    setQuestionState('loading');
+    setPlaceholder('Curating topics…');
+    els.activity.innerHTML = '';
+    els.startBtn.classList.add('hidden');
+    setActionIdle();
+    hideRevealBanner();
+    hidePrivateFeedback();
+}
+
+function goNext() {
+    ws.send(JSON.stringify({ type: 'next' }));
+    state = 'loading';
+    questionNumber++;
+    els.qMeta.textContent = `Question ${questionNumber}`;
+    setQuestionState('loading');
+    setPlaceholder('Loading next question…');
+    els.nextBtn.classList.add('hidden');
+    setActionIdle();
+    hideRevealBanner();
+    hidePrivateFeedback();
+    wordsRead = 0;
+}
+
+function buzz() {
+    if (state === 'reading') ws.send(JSON.stringify({ type: 'buzz' }));
+}
+
+function submitAnswer() {
+    const guess = els.answer.value.trim();
+    ws.send(JSON.stringify({ type: 'submit_answer', guess }));
+    els.answer.value = '';
+}
+
+function resetUI() {
+    state = 'idle';
+    isBuzzer = false;
+    wordsRead = 0;
+    questionNumber = 0;
+    stopTimer();
+    setPlaceholder('Pick a topic and start a round to begin.');
+    els.qMeta.textContent = '— · —';
+    setQuestionState('idle');
+    els.activity.innerHTML = '';
+    // Keep players list (still connected) — just zero scores
+    players.forEach(p => { p.score = 0; });
+    renderPlayers();
+    setActionIdle();
+    els.startBtn.classList.remove('hidden');
+    els.nextBtn.classList.add('hidden');
+    hideRevealBanner();
+    hidePrivateFeedback();
+    setStatus('');
+}
+
+// ── Wire up handlers ─────────────────────────────────────────────
+els.startBtn.addEventListener('click', startGame);
+els.nextBtn.addEventListener('click', goNext);
+els.buzzBtn.addEventListener('click', buzz);
+els.submitBtn.addEventListener('click', submitAnswer);
+els.resetBtn.addEventListener('click', () => ws.send(JSON.stringify({ type: 'reset' })));
+
+els.topic.addEventListener('keydown', e => { if (e.key === 'Enter') startGame(); });
+els.answer.addEventListener('keydown', e => { if (e.key === 'Enter') submitAnswer(); });
+
+window.addEventListener('keydown', e => {
+    if (document.activeElement.tagName === 'INPUT') return;
+    if (e.code === 'Space') { e.preventDefault(); buzz(); }
+    if (e.key.toLowerCase() === 'n' && state === 'revealed') goNext();
+});
+
+// Initial player render
+players.set(clientId, { score: 0 });
+renderPlayers();
 </script>
 </body>
 </html>

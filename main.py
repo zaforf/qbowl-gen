@@ -168,17 +168,19 @@ class GameState:
         self.active_connections.append(websocket)
         self.client_ids[websocket] = client_id
         await self.broadcast({"type": "player_joined", "player": client_id, "count": len(self.active_connections)})
-        # Send current game state so late-joining clients can catch up
+        # Always send a state_sync so the new client sees current players + scores,
+        # and the partial clue if a game is in progress.
+        sync: dict = {
+            "type": "state_sync",
+            "players": list(self.client_ids.values()),
+            "scores": self.scores,
+        }
         if self.current_words and self.stream_position > 0:
-            sync: dict = {
-                "type": "state_sync",
-                "partial_clue": " ".join(self.current_words[:self.stream_position]),
-                "words_read": self.stream_position,
-                "scores": self.scores,
-                "locked": self.buzzer_locked,
-                "winner": self.winner,
-            }
-            await websocket.send_text(json.dumps(sync))
+            sync["partial_clue"] = " ".join(self.current_words[:self.stream_position])
+            sync["words_read"] = self.stream_position
+            sync["locked"] = self.buzzer_locked
+            sync["winner"] = self.winner
+        await websocket.send_text(json.dumps(sync))
 
     async def disconnect(self, websocket: WebSocket):
         client_id = self.client_ids.pop(websocket, "unknown")
@@ -188,6 +190,15 @@ class GameState:
 
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
+            try:
+                await connection.send_text(json.dumps(message))
+            except:
+                pass
+
+    async def broadcast_except(self, message: dict, exclude: WebSocket):
+        for connection in self.active_connections:
+            if connection is exclude:
+                continue
             try:
                 await connection.send_text(json.dumps(message))
             except:
@@ -286,14 +297,21 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                         })
                         game.reset_buzzer()
                     else:
-                        # Wrong answer — tell everyone, resume reading for others
-                        await game.broadcast({
+                        # Wrong answer — feedback only to the guesser (don't leak the answer)
+                        await websocket.send_text(json.dumps({
                             "type": "wrong_buzz",
                             "guesser": client_id,
                             "guess": guess,
-                            "feedback": feedback,
-                            "scores": game.scores
-                        })
+                            "feedback": feedback,  # private: may reveal the answer
+                            "scores": game.scores,
+                        }))
+                        # Public version for other players: just the fact, no feedback
+                        await game.broadcast_except({
+                            "type": "wrong_buzz",
+                            "guesser": client_id,
+                            "guess": guess,
+                            "scores": game.scores,
+                        }, websocket)
                         game.reset_buzzer()
                         game.streaming_task = asyncio.create_task(resume_streaming())
 
