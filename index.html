@@ -75,11 +75,13 @@
             color: #e0e0e0;
             overflow-y: auto;
             min-height: 160px;
-            transition: border-color 0.2s;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease;
         }
-        #clue-area.locked { border-color: #5a1e1e; }
+        #clue-area.locked { border-color: #5a1e1e; box-shadow: 0 0 20px rgba(90, 30, 30, 0.2); }
         #clue-area.correct { border-color: #1e4a2e; }
         #clue-area.incorrect { border-color: #4a1e1e; }
+        .clue-word { transition: color 0.3s ease, opacity 0.3s ease; }
+        .clue-unread { color: #333; }
         #reveal-banner {
             background: #161616;
             border: 1px solid #222;
@@ -88,7 +90,9 @@
             display: flex;
             align-items: baseline;
             gap: 10px;
+            animation: slideUp 0.3s ease-out;
         }
+        @keyframes slideUp { from { transform: translateY(10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .answer-label { font-size: 11px; color: #444; }
         #reveal-answer { font-size: 15px; font-weight: 600; color: #fff; }
         #reveal-answer.correct { color: #4ade80; }
@@ -98,7 +102,9 @@
             display: flex;
             gap: 8px;
             align-items: center;
+            animation: fadeIn 0.2s ease-out;
         }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
         #answer-input {
             flex: 1;
             background: #1a1a1a;
@@ -188,7 +194,14 @@
 <script>
     let state = 'idle';
     let isBuzzer = false;
-    const clientId = 'player_' + Math.random().toString(36).slice(2, 7);
+    
+    // Session Persistence
+    let clientId = localStorage.getItem('qbowl_client_id');
+    if (!clientId) {
+        clientId = 'player_' + Math.random().toString(36).slice(2, 7);
+        localStorage.setItem('qbowl_client_id', clientId);
+    }
+
     let timerInterval;
 
     const statusEl      = document.getElementById('status');
@@ -224,7 +237,11 @@
                 clueEl.textContent = '';
                 clueEl.className = '';
             }
-            clueEl.textContent += (clueEl.textContent ? ' ' : '') + msg.text;
+            // We wrap each word in a span for future styling
+            const wordSpan = document.createElement('span');
+            wordSpan.className = 'clue-word';
+            wordSpan.textContent = ' ' + msg.text;
+            clueEl.appendChild(wordSpan);
             clueEl.scrollTop = clueEl.scrollHeight;
         } else if (msg.type === 'lock') {
             state = 'locked';
@@ -232,6 +249,13 @@
             clueEl.className = 'locked';
             nextBtn.classList.add('hidden');
             statusEl.textContent = `buzzed: ${msg.winner}`;
+            
+            // Show the rest of the clue as grayed out
+            // Since we don't have the full clue yet in the browser, 
+            // the server will stop streaming. 
+            // To fulfill the "show rest of answer" request, 
+            // we would need the server to send the full clue text on lock.
+            
             if (isBuzzer) {
                 answerSection.classList.remove('hidden');
                 answerInput.focus();
