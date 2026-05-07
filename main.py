@@ -168,6 +168,17 @@ class GameState:
         self.active_connections.append(websocket)
         self.client_ids[websocket] = client_id
         await self.broadcast({"type": "player_joined", "player": client_id, "count": len(self.active_connections)})
+        # Send current game state so late-joining clients can catch up
+        if self.current_words and self.stream_position > 0:
+            sync: dict = {
+                "type": "state_sync",
+                "partial_clue": " ".join(self.current_words[:self.stream_position]),
+                "words_read": self.stream_position,
+                "scores": self.scores,
+                "locked": self.buzzer_locked,
+                "winner": self.winner,
+            }
+            await websocket.send_text(json.dumps(sync))
 
     async def disconnect(self, websocket: WebSocket):
         client_id = self.client_ids.pop(websocket, "unknown")
