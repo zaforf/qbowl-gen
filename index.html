@@ -102,10 +102,13 @@
         }
         @keyframes slideUp { from { transform: translateY(5px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
         .log-type { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
-        .type-start { color: #3b82f6; }
-        .type-lock { color: #ef4444; }
-        .type-reveal { color: #fbbf24; }
-        .type-error { color: #f87171; }
+        .type-start  { color: #3b82f6; }
+        .type-lock   { color: #ef4444; }
+        .type-reveal { color: #4ade80; }
+        .type-wrong  { color: #f97316; }
+        .type-dead   { color: #fbbf24; }
+        .type-join   { color: #6b7280; }
+        .type-error  { color: #f87171; }
         .log-content { color: #aaa; }
         .log-entry.expandable { cursor: pointer; }
         .log-entry.expandable:hover { background: #1c1c1c; }
@@ -244,7 +247,10 @@
         if (msg.type === 'status') {
             statusEl.textContent = msg.text;
             setClue(msg.text, 'placeholder');
+
         } else if (msg.type === 'clue_chunk') {
+            // Ignore stale chunks that arrive after a reset
+            if (state === 'idle') return;
             if (state !== 'reading') {
                 state = 'reading';
                 clueEl.textContent = '';
@@ -253,75 +259,109 @@
             }
             const wordSpan = document.createElement('span');
             wordSpan.className = 'clue-word';
-            wordSpan.textContent = (clueEl.textContent ? ' ' : '') + msg.text;
+            wordSpan.textContent = (clueEl.children.length ? ' ' : '') + msg.text;
             clueEl.appendChild(wordSpan);
             wordsRead++;
             clueEl.scrollTop = clueEl.scrollHeight;
+
         } else if (msg.type === 'lock') {
             state = 'locked';
             isBuzzer = (msg.winner === clientId);
             clueEl.className = 'locked';
             nextBtn.classList.add('hidden');
             statusEl.textContent = `buzzed: ${msg.winner}`;
-            
-            appendLogEntry('lock', `Player ${msg.winner} buzzed!`);
-            
+            appendLogEntry('lock', `${msg.winner} buzzed!`);
             if (isBuzzer) {
                 answerSection.classList.remove('hidden');
                 answerInput.focus();
                 startTimer(10000);
             }
+
+        } else if (msg.type === 'wrong_buzz') {
+            // Wrong answer — resume reading, others can still buzz
+            state = 'reading';
+            isBuzzer = false;
+            stopTimer();
+            answerSection.classList.add('hidden');
+            clueEl.className = ''; // remove 'locked' border
+            appendLogEntry('wrong', `${msg.guesser} said "${msg.guess}" — ${msg.feedback}`);
+            statusEl.textContent = 'reading...';
+            if (msg.scores) updateScoreboard(msg.scores);
+
         } else if (msg.type === 'reveal') {
             state = 'revealed';
             isBuzzer = false;
             stopTimer();
-            clueEl.className = msg.correct ? 'correct' : 'incorrect';
-            
+            clueEl.className = 'correct';
+            answerSection.classList.add('hidden');
+
+            // Re-render clue with read/unread highlighting
             clueEl.textContent = '';
-            const fullWords = msg.full_clue.split(' ');
-            fullWords.forEach((word, idx) => {
+            msg.full_clue.split(' ').forEach((word, idx) => {
                 const span = document.createElement('span');
                 span.textContent = (idx === 0 ? '' : ' ') + word;
                 span.className = idx < wordsRead ? 'clue-word' : 'clue-word clue-unread';
                 clueEl.appendChild(span);
             });
 
-            // Add to log with expandable clue
-            const resultText = msg.correct ? 'Correct!' : `Wrong. Answer: ${msg.answer}`;
-            const logEntry = appendLogEntry('reveal', `${msg.winner} answered: ${msg.guess || '...'} → ${resultText}`);
-            
-            const clueDiv = document.createElement('div');
-            clueDiv.className = 'expanded-clue hidden';
-            clueDiv.innerHTML = `<strong>Full Clue:</strong><br>${msg.full_clue}`;
-            logEntry.appendChild(clueDiv);
-            logEntry.classList.add('expandable');
-            logEntry.onclick = () => {
-                clueDiv.classList.toggle('hidden');
-            };
+            const logEntry = appendLogEntry('reveal',
+                `${msg.winner} said "${msg.guess}" → Correct! (${msg.feedback})`);
+            attachExpandableClue(logEntry, msg.full_clue);
 
             nextBtn.classList.remove('hidden');
-            statusEl.textContent = msg.correct ? '✓ correct' : '✗ incorrect';
-            
-            if (msg.scores) {
-                updateScoreboard(msg.scores);
+            statusEl.textContent = `✓ correct — ${msg.answer}`;
+            if (msg.scores) updateScoreboard(msg.scores);
+
+        } else if (msg.type === 'question_dead') {
+            state = 'revealed'; // N key works, Next button works
+            clueEl.className = 'incorrect';
+            answerSection.classList.add('hidden');
+
+            // Re-render full clue (all words shown as read since it fully streamed)
+            if (msg.full_clue) {
+                clueEl.textContent = '';
+                msg.full_clue.split(' ').forEach((word, idx) => {
+                    const span = document.createElement('span');
+                    span.textContent = (idx === 0 ? '' : ' ') + word;
+                    span.className = 'clue-word';
+                    clueEl.appendChild(span);
+                });
             }
+
+            const logEntry = appendLogEntry('dead', `No one got it. Answer: ${msg.answer}`);
+            if (msg.full_clue) attachExpandableClue(logEntry, msg.full_clue);
+
+            nextBtn.classList.remove('hidden');
+            statusEl.textContent = `dead — ${msg.answer}`;
+
         } else if (msg.type === 'reset') {
             resetUI();
+
+        } else if (msg.type === 'player_joined') {
+            appendLogEntry('join', `${msg.player} joined · ${msg.count} online`);
+
+        } else if (msg.type === 'player_left') {
+            appendLogEntry('join', `${msg.player} left · ${msg.count} online`);
+
         } else if (msg.type === 'error') {
             statusEl.textContent = 'error: ' + msg.message;
-            if (state === 'reading') {
+            if (state === 'reading' || state === 'loading') {
                 state = 'idle';
                 setClue('no more questions. enter a new topic to continue.', 'placeholder');
                 startBtn.classList.remove('hidden');
                 nextBtn.classList.add('hidden');
             }
-        } else if (msg.type === 'question_dead') {
-            state = 'dead';
-            statusEl.textContent = 'Question dead.';
-            nextBtn.classList.remove('hidden');
-            buzzPrompt.classList.add('hidden');
         }
     };
+
+    function attachExpandableClue(logEntry, fullClue) {
+        const clueDiv = document.createElement('div');
+        clueDiv.className = 'expanded-clue hidden';
+        clueDiv.textContent = fullClue;
+        logEntry.appendChild(clueDiv);
+        logEntry.classList.add('expandable');
+        logEntry.onclick = () => clueDiv.classList.toggle('hidden');
+    }
 
     function appendLogEntry(type, text) {
         const entry = document.createElement('div');

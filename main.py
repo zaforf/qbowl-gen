@@ -143,26 +143,37 @@ class Brain:
 class GameState:
     def __init__(self):
         self.active_connections: List[WebSocket] = []
+        self.client_ids: Dict[WebSocket, str] = {}
         self.buzzer_locked = False
         self.winner = None
         self.current_answer = None
         self.current_clue = None
         self.streaming_task: Optional[asyncio.Task] = None
         self.bg_generator_task: Optional[asyncio.Task] = None
-        
+
         # Scoring
         self.scores: Dict[str, int] = {}
-        
+
         # Topic Queue Infrastructure
         self.topic_queue: List[Dict] = []
         self.pregenerated_clues: asyncio.Queue = asyncio.Queue()
 
-    async def connect(self, websocket: WebSocket):
+        # Per-question state for multi-buzz
+        self.buzzed_players: set = set()
+        self.current_words: List[str] = []
+        self.stream_position: int = 0
+
+    async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
         self.active_connections.append(websocket)
+        self.client_ids[websocket] = client_id
+        await self.broadcast({"type": "player_joined", "player": client_id, "count": len(self.active_connections)})
 
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+    async def disconnect(self, websocket: WebSocket):
+        client_id = self.client_ids.pop(websocket, "unknown")
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+        await self.broadcast({"type": "player_left", "player": client_id, "count": len(self.active_connections)})
 
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
@@ -191,7 +202,7 @@ async def get():
 
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
-    await game.connect(websocket)
+    await game.connect(websocket, client_id)
     if client_id not in game.scores:
         game.scores[client_id] = 0
 
@@ -199,69 +210,94 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
         while True:
             data = await websocket.receive_text()
             message = json.loads(data)
-            
+
             if message.get("type") == "start":
                 topic = message.get("topic", "General Knowledge")
                 await game.stop_streaming()
                 game.reset_buzzer()
-                
+
                 game.topic_queue = []
                 while not game.pregenerated_clues.empty():
                     game.pregenerated_clues.get_nowait()
-                
+
                 await game.broadcast({"type": "status", "text": "Curating diverse topics..."})
                 topics = await brain.generate_topic_list(topic)
                 game.topic_queue = topics
-                
+
                 if game.bg_generator_task:
                     game.bg_generator_task.cancel()
                 game.bg_generator_task = asyncio.create_task(background_generator())
-                
+
                 game.streaming_task = asyncio.create_task(stream_next_clue(client_id))
-            
+
             elif message.get("type") == "next":
                 await game.stop_streaming()
                 game.reset_buzzer()
+                game.buzzed_players = set()
                 game.streaming_task = asyncio.create_task(stream_next_clue(client_id))
 
             elif message.get("type") == "buzz":
-                if not game.buzzer_locked:
+                if not game.buzzer_locked and client_id not in game.buzzed_players:
                     game.buzzer_locked = True
                     game.winner = client_id
                     game.buzz_time = time.time()
                     await game.broadcast({"type": "lock", "winner": client_id})
                     await game.stop_streaming()
+                elif client_id in game.buzzed_players:
+                    await websocket.send_text(json.dumps({"type": "error", "message": "Already buzzed this question."}))
                 else:
                     await websocket.send_text(json.dumps({"type": "error", "message": "Too late!"}))
-            
+
             elif message.get("type") == "submit_answer":
                 if game.winner == client_id:
-                    guess = message.get("guess", "")
-                    is_correct, feedback = await brain.validate_answer(
-                        game.current_answer, guess, game.current_clue
-                    )
-                    
-                    points = 10 if is_correct else -5
-                    game.scores[client_id] += points
-                    
-                    await game.broadcast({
-                        "type": "reveal", 
-                        "correct": is_correct, 
-                        "answer": game.current_answer, 
-                        "feedback": feedback,
-                        "winner": client_id,
-                        "full_clue": game.current_clue,
-                        "scores": game.scores
-                    })
-                    game.reset_buzzer()
-            
+                    guess = message.get("guess", "").strip()
+
+                    if not guess:
+                        is_correct, feedback = False, "No answer given."
+                    else:
+                        is_correct, feedback = await brain.validate_answer(
+                            game.current_answer, guess, game.current_clue
+                        )
+
+                    game.scores[client_id] = game.scores.get(client_id, 0) + (10 if is_correct else -5)
+                    game.buzzed_players.add(client_id)
+
+                    if is_correct:
+                        await game.broadcast({
+                            "type": "reveal",
+                            "correct": True,
+                            "answer": game.current_answer,
+                            "feedback": feedback,
+                            "winner": client_id,
+                            "guess": guess,
+                            "full_clue": game.current_clue,
+                            "scores": game.scores
+                        })
+                        game.reset_buzzer()
+                    else:
+                        # Wrong answer — tell everyone, resume reading for others
+                        await game.broadcast({
+                            "type": "wrong_buzz",
+                            "guesser": client_id,
+                            "guess": guess,
+                            "feedback": feedback,
+                            "scores": game.scores
+                        })
+                        game.reset_buzzer()
+                        game.streaming_task = asyncio.create_task(resume_streaming())
+
             elif message.get("type") == "reset":
+                await game.stop_streaming()
+                if game.bg_generator_task:
+                    game.bg_generator_task.cancel()
+                    game.bg_generator_task = None
                 game.reset_buzzer()
+                game.buzzed_players = set()
                 game.scores = {}
                 await game.broadcast({"type": "reset"})
 
     except WebSocketDisconnect:
-        game.disconnect(websocket)
+        await game.disconnect(websocket)
 
 async def background_generator():
     try:
@@ -281,7 +317,7 @@ async def stream_next_clue(client_id: str):
         while game.pregenerated_clues.empty() and attempts < 50:
             await asyncio.sleep(0.1)
             attempts += 1
-            
+
         if game.pregenerated_clues.empty():
             await game.broadcast({"type": "error", "message": "No more questions in the queue."})
             return
@@ -289,24 +325,56 @@ async def stream_next_clue(client_id: str):
         answer, clue = await game.pregenerated_clues.get()
         game.current_answer = answer
         game.current_clue = clue
-        
-        words = clue.split()
-        for word in words:
+        game.current_words = clue.split()
+        game.stream_position = 0
+        game.buzzed_players = set()
+
+        for i, word in enumerate(game.current_words):
             if game.buzzer_locked:
-                break
+                game.stream_position = i  # resume_streaming will start here
+                return
             await game.broadcast({"type": "clue_chunk", "text": word})
+            game.stream_position = i + 1
             await asyncio.sleep(0.20)
-        
+
+        # Finished reading with no correct buzz
+        await asyncio.sleep(2)
         if not game.buzzer_locked:
-            await asyncio.sleep(5)
-            if not game.buzzer_locked:
-                await game.broadcast({"type": "question_dead"})
-            
+            await game.broadcast({
+                "type": "question_dead",
+                "answer": game.current_answer,
+                "full_clue": game.current_clue
+            })
+
     except asyncio.CancelledError:
         pass
     except Exception as e:
         print(f"Error streaming clue: {e}")
         await game.broadcast({"type": "error", "message": "AI failed to stream clue."})
+
+
+async def resume_streaming():
+    """Resume word-by-word reading after a wrong buzz."""
+    try:
+        for i in range(game.stream_position, len(game.current_words)):
+            if game.buzzer_locked:
+                game.stream_position = i
+                return
+            await game.broadcast({"type": "clue_chunk", "text": game.current_words[i]})
+            game.stream_position = i + 1
+            await asyncio.sleep(0.20)
+
+        # Reached end of clue with no correct answer
+        await asyncio.sleep(2)
+        if not game.buzzer_locked:
+            await game.broadcast({
+                "type": "question_dead",
+                "answer": game.current_answer,
+                "full_clue": game.current_clue
+            })
+
+    except asyncio.CancelledError:
+        pass
 
 if __name__ == "__main__":
     import uvicorn
