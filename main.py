@@ -65,12 +65,18 @@ CLUE: [The full pyramidal text]
 """
 
 SYSTEM_PROMPT_JUDGE = """
-You are the "Quizbowl Judge." Determine if a USER_GUESS is conceptually correct for the target ANSWER.
-Be "Quizbowl Lenient": Accept common synonyms or slightly incomplete but unambiguous names.
+You are the "Quizbowl Judge." Determine if a USER_GUESS matches the target ANSWER.
+
+STRICT RULES:
+- The guess must name the *specific* answer, not a parent category or general description.
+  e.g. ANSWER="KMP algorithm" → "string matching algorithm" is WRONG; "Knuth-Morris-Pratt" is CORRECT.
+  e.g. ANSWER="quicksort" → "sorting algorithm" is WRONG.
+- Accept common abbreviations, alternate spellings, or unambiguously shortened names of the SAME specific thing.
+- Reject vague, overspecified, or category-level guesses even if technically related.
 
 Output only:
 RESULT: [CORRECT/INCORRECT]
-FEEDBACK: [Briefly explain why or "Perfect!"]
+FEEDBACK: [One sentence. If wrong, say what was expected.]
 """
 
 class Brain:
@@ -88,8 +94,9 @@ class Brain:
             ],
             temperature=0.7
         )
-        
+
         raw_text = response.choices[0].message.content
+        print(f"\n{'='*60}\n[ARCHITECT – {MODEL_ARCHITECT}]\n{raw_text}\n{'='*60}\n")
         topics = []
         parts = raw_text.split("TOPIC:")
         for part in parts[1:]:
@@ -113,6 +120,7 @@ class Brain:
             temperature=0.3
         )
         text = response.choices[0].message.content
+        print(f"\n{'='*60}\n[WRITER – {MODEL_WRITER}]\n{text}\n{'='*60}\n")
         try:
             answer = text.split("ANSWER:")[1].split("CLUE:")[0].strip()
             clue = text.split("CLUE:")[1].strip()
@@ -131,6 +139,7 @@ class Brain:
             temperature=0
         )
         text = response.choices[0].message.content
+        print(f"\n{'='*60}\n[JUDGE – {MODEL_JUDGE}]\nANSWER: {answer} | GUESS: {guess}\n{text}\n{'='*60}\n")
         try:
             result = text.split("RESULT:")[1].split("FEEDBACK:")[0].strip()
             feedback = text.split("FEEDBACK:")[1].strip()
@@ -280,17 +289,13 @@ async def stream_next_clue(client_id: str):
         game.current_answer = answer
         game.current_clue = clue
         
-        # Stream the clue
-        sentences = clue.split(". ")
-        for sentence in sentences:
+        # Stream word-by-word at quizbowl reader pace (~200ms/word ≈ 300 WPM)
+        words = clue.split()
+        for word in words:
             if game.buzzer_locked:
                 break
-            s = sentence.strip()
-            if s and not s.endswith("."):
-                s += "."
-            
-            await game.broadcast({"type": "clue_chunk", "text": s})
-            await asyncio.sleep(1.6)
+            await game.broadcast({"type": "clue_chunk", "text": word})
+            await asyncio.sleep(0.20)
             
     except asyncio.CancelledError:
         pass

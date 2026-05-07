@@ -89,13 +89,13 @@
             padding: 18px 20px;
             font-size: 14px;
             line-height: 1.75;
-            color: #bbb;
+            color: #e0e0e0;
             overflow-y: auto;
             min-height: 160px;
             transition: border-color 0.2s;
             word-break: break-word;
         }
-        #clue-area.placeholder { color: #333; }
+        #clue-area.placeholder { color: #555; }
         #clue-area.locked   { border-color: #5a1e1e; }
         #clue-area.correct  { border-color: #1e4a2e; }
         #clue-area.incorrect{ border-color: #4a1e1e; }
@@ -213,7 +213,9 @@
 
 <script>
     // ── State ──────────────────────────────────────────────────────
-    // idle | reading | locked | revealed
+    // idle | loading | reading | locked | revealed
+    // 'loading' = game started, waiting for first clue_chunk (status msg may fill clue area)
+    // 'reading' = clue actively streaming; clue_chunk won't wipe the area
     let state = 'idle';
     let isBuzzer = false;
     const clientId = 'player_' + Math.random().toString(36).slice(2, 7);
@@ -315,7 +317,7 @@
     function startGame() {
         const topic = topicInput.value.trim() || 'General Knowledge';
         ws.send(JSON.stringify({ type: 'start', topic }));
-        state = 'reading';
+        state = 'loading'; // clue_chunk will clear whatever status message landed here
         setClue('', 'placeholder');
         revealBanner.classList.add('hidden');
         answerSection.classList.add('hidden');
@@ -325,7 +327,7 @@
 
     function goNext() {
         ws.send(JSON.stringify({ type: 'next' }));
-        state = 'reading';
+        state = 'loading';
         setClue('', '');
         revealBanner.classList.add('hidden');
         nextBtn.classList.add('hidden');
