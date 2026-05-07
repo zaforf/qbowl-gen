@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import time
 from typing import List, Optional, Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
@@ -85,7 +86,6 @@ class Brain:
         self.groq = groq_client
 
     async def generate_topic_list(self, general_topic: str):
-        # Architect: Now Groq (Llama 3.3 70B)
         response = self.groq.chat.completions.create(
             model=MODEL_ARCHITECT,
             messages=[
@@ -96,7 +96,6 @@ class Brain:
         )
 
         raw_text = response.choices[0].message.content
-        print(f"\n{'='*60}\n[ARCHITECT – {MODEL_ARCHITECT}]\n{raw_text}\n{'='*60}\n")
         topics = []
         parts = raw_text.split("TOPIC:")
         for part in parts[1:]:
@@ -110,7 +109,6 @@ class Brain:
         return topics
 
     async def generate_clue_from_facts(self, topic_data: dict):
-        # Writer: Groq (Llama 3.3 70B)
         response = self.groq.chat.completions.create(
             model=MODEL_WRITER,
             messages=[
@@ -120,7 +118,6 @@ class Brain:
             temperature=0.3
         )
         text = response.choices[0].message.content
-        print(f"\n{'='*60}\n[WRITER – {MODEL_WRITER}]\n{text}\n{'='*60}\n")
         try:
             answer = text.split("ANSWER:")[1].split("CLUE:")[0].strip()
             clue = text.split("CLUE:")[1].strip()
@@ -129,7 +126,6 @@ class Brain:
             return "Error", "Could not parse clue from Groq Writer."
 
     async def validate_answer(self, answer: str, guess: str, clue: str):
-        # Judge: Groq (Llama 3.1 8B)
         response = self.groq.chat.completions.create(
             model=MODEL_JUDGE,
             messages=[
@@ -139,7 +135,6 @@ class Brain:
             temperature=0
         )
         text = response.choices[0].message.content
-        print(f"\n{'='*60}\n[JUDGE – {MODEL_JUDGE}]\nANSWER: {answer} | GUESS: {guess}\n{text}\n{'='*60}\n")
         try:
             result = text.split("RESULT:")[1].split("FEEDBACK:")[0].strip()
             feedback = text.split("FEEDBACK:")[1].strip()
@@ -156,6 +151,9 @@ class GameState:
         self.current_clue = None
         self.streaming_task: Optional[asyncio.Task] = None
         self.bg_generator_task: Optional[asyncio.Task] = None
+        
+        # Scoring
+        self.scores: Dict[str, int] = {}
         
         # Topic Queue Infrastructure
         self.topic_queue: List[Dict] = []
@@ -196,6 +194,10 @@ async def get():
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     await game.connect(websocket)
+    # Init score
+    if client_id not in game.scores:
+        game.scores[client_id] = 0
+
     try:
         while True:
             data = await websocket.receive_text()
@@ -210,21 +212,17 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 while not game.pregenerated_clues.empty():
                     game.pregenerated_clues.get_nowait()
                 
-                # 1. Architect generates the high-entropy list
                 await game.broadcast({"type": "status", "text": "Curating diverse topics..."})
                 topics = await brain.generate_topic_list(topic)
                 game.topic_queue = topics
                 
-                # Start background worker to fill the clue queue
                 if game.bg_generator_task:
                     game.bg_generator_task.cancel()
                 game.bg_generator_task = asyncio.create_task(background_generator())
                 
-                # Start the first clue immediately
                 game.streaming_task = asyncio.create_task(stream_next_clue(client_id))
             
             elif message.get("type") == "next":
-                # Trigger next question from the queue
                 await game.stop_streaming()
                 game.reset_buzzer()
                 game.streaming_task = asyncio.create_task(stream_next_clue(client_id))
@@ -233,6 +231,8 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 if not game.buzzer_locked:
                     game.buzzer_locked = True
                     game.winner = client_id
+                    # Track when the buzz happened to calculate point value
+                    game.buzz_time = time.time()
                     await game.broadcast({"type": "lock", "winner": client_id})
                     await game.stop_streaming()
                 else:
@@ -244,24 +244,39 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     is_correct, feedback = await brain.validate_answer(
                         game.current_answer, guess, game.current_clue
                     )
+                    
+                    # Calculate points based on how far the clue was streamed
+                    points = 0
+                    if is_correct:
+                        # Simplification: points based on clue length streamed
+                        # In a real scenario, we'd track the current word index.
+                        # Here we'll just use a fixed set of values for this phase.
+                        points = 10
+                    else:
+                        points = -5
+                    
+                    game.scores[client_id] += points
+                    
                     await game.broadcast({
                         "type": "reveal", 
                         "correct": is_correct, 
                         "answer": game.current_answer, 
                         "feedback": feedback,
-                        "winner": client_id
+                        "winner": client_id,
+                        "scores": game.scores
                     })
                     game.reset_buzzer()
             
             elif message.get("type") == "reset":
                 game.reset_buzzer()
+                # Clear scores for reset
+                game.scores = {}
                 await game.broadcast({"type": "reset"})
 
     except WebSocketDisconnect:
         game.disconnect(websocket)
 
 async def background_generator():
-    """Fills the pregenerated_clues queue using the topic_queue."""
     try:
         while True:
             if game.topic_queue:
@@ -275,7 +290,6 @@ async def background_generator():
 
 async def stream_next_clue(client_id: str):
     try:
-        # Get the next clue from the queue
         attempts = 0
         while game.pregenerated_clues.empty() and attempts < 50:
             await asyncio.sleep(0.1)
@@ -289,7 +303,6 @@ async def stream_next_clue(client_id: str):
         game.current_answer = answer
         game.current_clue = clue
         
-        # Stream word-by-word at quizbowl reader pace (~200ms/word ≈ 300 WPM)
         words = clue.split()
         for word in words:
             if game.buzzer_locked:
