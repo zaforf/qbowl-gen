@@ -6,6 +6,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from google import genai
 from google.genai import types
+from openai import OpenAI
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -13,19 +14,28 @@ load_dotenv()
 
 # --- Configuration ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not found in environment variables")
+if not GROQ_API_KEY:
+    raise ValueError("GROQ_API_KEY not found in environment variables")
 
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Clients
+gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+groq_client = OpenAI(
+    api_key=GROQ_API_KEY,
+    base_url="https://api.groq.com/openai/v1"
+)
 
 # Tiered Model Selection
-MODEL_ARCHITECT = "gemma-4-31b-it"       # High-entropy topic & fact generation
-MODEL_WRITER = "gemini-3-flash-preview" # Fast, structured clue writing
-MODEL_JUDGE = "gemini-2.5-flash-lite"     # Ultra-low latency validation
+MODEL_ARCHITECT = "gemma-4-31b-it"           # Google: High-entropy topic & fact generation
+MODEL_WRITER = "llama-3.3-70b-versatile"     # Groq: Fast, structured clue writing
+MODEL_JUDGE = "llama-3.1-8b-instant"         # Groq: Ultra-low latency validation
 
 SYSTEM_PROMPT_ARCHITECT = """
 You are the "Quizbowl Curator." Your goal is to generate a high-entropy, diverse list of topics for a Quizbowl game.
-When given a general topic (e.g., "Computer Science"), you must produce 50 distinct, non-overlapping specific entities, theorems, people, or concepts.
+When given a general topic (e.g., "Computer Science"), you must produce 3 distinct, non-overlapping specific entities, theorems, people, or concepts.
 For each entity, provide a "Fact Sheet": 3-5 bullet points of increasing obscurity (from very niche to very common).
 
 Format:
@@ -35,7 +45,7 @@ FACTS:
 - [Niche Fact 2]
 - [Common Fact 3]
 ...
-(Repeat for 50 topics)
+((Repeat for 3 topics))
 """
 
 SYSTEM_PROMPT_WRITER = """
@@ -65,12 +75,13 @@ FEEDBACK: [Briefly explain why or "Perfect!"]
 
 class Brain:
     def __init__(self):
-        self.client = client
+        self.gemini = gemini_client
+        self.groq = groq_client
 
     async def generate_topic_list(self, general_topic: str):
-        # Architect generates a diverse set of topics and facts
-        prompt = f"General Topic: {general_topic}. Generate 50 distinct Quizbowl topics with fact sheets."
-        response = self.client.models.generate_content(
+        # Architect: Gemini (Gemma 4 31B)
+        prompt = f"General Topic: {general_topic}. Generate 3 distinct Quizbowl topics with fact sheets."
+        response = self.gemini.models.generate_content(
             model=MODEL_ARCHITECT,
             contents=prompt,
             config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT_ARCHITECT)
@@ -90,36 +101,40 @@ class Brain:
         return topics
 
     async def generate_clue_from_facts(self, topic_data: dict):
-        # Writer turns facts into a pyramidal clue
-        prompt = f"TOPIC: {topic_data['name']}\nFACTS: {topic_data['facts']}"
-        response = self.client.models.generate_content(
+        # Writer: Groq (Llama 3.3 70B)
+        response = self.groq.chat.completions.create(
             model=MODEL_WRITER,
-            contents=prompt,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT_WRITER)
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT_WRITER},
+                {"role": "user", "content": f"TOPIC: {topic_data['name']}\nFACTS: {topic_data['facts']}"}
+            ],
+            temperature=0.3
         )
-        text = response.text
+        text = response.choices[0].message.content
         try:
             answer = text.split("ANSWER:")[1].split("CLUE:")[0].strip()
             clue = text.split("CLUE:")[1].strip()
             return answer, clue
         except IndexError:
-            return "Error", "Could not parse clue from writer."
+            return "Error", "Could not parse clue from Groq Writer."
 
     async def validate_answer(self, answer: str, guess: str, clue: str):
-        # Judge validates the guess
-        prompt = f"ANSWER: {answer} | USER_GUESS: {guess} | CLUE: {clue}"
-        response = self.client.models.generate_content(
+        # Judge: Groq (Llama 3.1 8B)
+        response = self.groq.chat.completions.create(
             model=MODEL_JUDGE,
-            contents=prompt,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT_JUDGE)
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT_JUDGE},
+                {"role": "user", "content": f"ANSWER: {answer} | USER_GUESS: {guess} | CLUE: {clue}"}
+            ],
+            temperature=0
         )
-        text = response.text
+        text = response.choices[0].message.content
         try:
             result = text.split("RESULT:")[1].split("FEEDBACK:")[0].strip()
             feedback = text.split("FEEDBACK:")[1].strip()
             return result == "CORRECT", feedback
         except IndexError:
-            return False, "Validation error."
+            return False, "Validation error from Groq Judge."
 
 class GameState:
     def __init__(self):
@@ -238,13 +253,19 @@ async def handle_game_loop(client_id: str, topic: str):
         bg_task = asyncio.create_task(background_generator())
         
         # 2. Get the first clue immediately
-        # We wait just a moment for the bg_generator to put at least one in
-        while game.pregenerated_clues.empty():
-            await asyncio.sleep(0.1)
-            
-        answer, clue = await game.pregenerated_clues.get()
-        game.current_answer = answer
-        game.current_clue = clue
+        # while game.pregenerated_clues.empty():
+        #     await asyncio.sleep(0.1)
+        #
+        # answer, clue = await game.pregenerated_clues.get()
+        
+        # Direct call for the first clue to avoid initial loop delay
+        first_topic_data = game.topic_queue.pop(0) if game.topic_queue else None
+        if first_topic_data:
+            answer, clue = await brain.generate_clue_from_facts(first_topic_data)
+            game.current_answer = answer
+            game.current_clue = clue
+        else:
+            raise Exception("Architect failed to generate topics.")
         
         # 3. Stream the clue
         sentences = clue.split(". ")
