@@ -263,6 +263,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                         "answer": game.current_answer, 
                         "feedback": feedback,
                         "winner": client_id,
+                        "full_clue": game.current_clue,
                         "scores": game.scores
                     })
                     game.reset_buzzer()

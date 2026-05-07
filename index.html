@@ -194,8 +194,8 @@
 <script>
     let state = 'idle';
     let isBuzzer = false;
+    let wordsRead = 0;
     
-    // Session Persistence
     let clientId = localStorage.getItem('qbowl_client_id');
     if (!clientId) {
         clientId = 'player_' + Math.random().toString(36).slice(2, 7);
@@ -236,12 +236,13 @@
                 state = 'reading';
                 clueEl.textContent = '';
                 clueEl.className = '';
+                wordsRead = 0;
             }
-            // We wrap each word in a span for future styling
             const wordSpan = document.createElement('span');
             wordSpan.className = 'clue-word';
-            wordSpan.textContent = ' ' + msg.text;
+            wordSpan.textContent = (clueEl.textContent ? ' ' : '') + msg.text;
             clueEl.appendChild(wordSpan);
+            wordsRead++;
             clueEl.scrollTop = clueEl.scrollHeight;
         } else if (msg.type === 'lock') {
             state = 'locked';
@@ -249,13 +250,6 @@
             clueEl.className = 'locked';
             nextBtn.classList.add('hidden');
             statusEl.textContent = `buzzed: ${msg.winner}`;
-            
-            // Show the rest of the clue as grayed out
-            // Since we don't have the full clue yet in the browser, 
-            // the server will stop streaming. 
-            // To fulfill the "show rest of answer" request, 
-            // we would need the server to send the full clue text on lock.
-            
             if (isBuzzer) {
                 answerSection.classList.remove('hidden');
                 answerInput.focus();
@@ -266,6 +260,17 @@
             isBuzzer = false;
             stopTimer();
             clueEl.className = msg.correct ? 'correct' : 'incorrect';
+            
+            // Render full clue with unread parts grayed out
+            clueEl.textContent = '';
+            const fullWords = msg.full_clue.split(' ');
+            fullWords.forEach((word, idx) => {
+                const span = document.createElement('span');
+                span.textContent = (idx === 0 ? '' : ' ') + word;
+                span.className = idx < wordsRead ? 'clue-word' : 'clue-word clue-unread';
+                clueEl.appendChild(span);
+            });
+
             revealAnswer.textContent = msg.answer;
             revealAnswer.className = msg.correct ? 'correct' : 'incorrect';
             revealFeedback.textContent = msg.feedback;
@@ -293,6 +298,7 @@
     function setClue(text, cls = '') {
         clueEl.textContent = text;
         clueEl.className = cls;
+        wordsRead = 0;
     }
 
     function updateScoreboard(scores) {
