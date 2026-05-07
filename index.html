@@ -65,13 +65,16 @@
         ws.onmessage = (event) => {
             const msg = JSON.parse(event.data);
             
-            if (msg.type === 'clue_chunk') {
-                if (clueEl.innerText === "Waiting for game to start..." || clueEl.innerText === "LOCKED!") {
+            if (msg.type === 'status') {
+                statusEl.innerText = msg.text;
+            } else if (msg.type === 'clue_chunk') {
+                if (clueEl.innerText === "Waiting for game to start..." || clueEl.innerText === "LOCKED!" || clueEl.innerText === "Curating diverse topics...") {
                     clueEl.innerText = "";
                 }
                 clueEl.innerText += " " + msg.text;
             } else if (msg.type === 'lock') {
-                clueEl.innerHTML = `<span class="text-red-500">LOCKED!</span><br>${clueEl.innerText}`;
+                const currentClue = clueEl.innerText;
+                clueEl.innerHTML = `<div class="text-red-500 font-black text-4xl mb-4">LOCKED!</div><div class="text-xl text-gray-300">${currentClue}</div>`;
                 winnerEl.innerText = `Buzzer: ${msg.winner}`;
                 winnerEl.classList.remove('hidden');
                 
@@ -84,7 +87,7 @@
                 }
             } else if (msg.type === 'reveal') {
                 winnerEl.innerHTML = `Winner: ${msg.winner}<br><span class="text-white text-xl">${msg.feedback}</span>`;
-                clueEl.innerHTML = `Correct Answer: <span class="text-yellow-400">${msg.answer}</span>`;
+                clueEl.innerHTML = `<div class="text-gray-400 text-lg mb-2">Correct Answer:</div><div class="text-yellow-400 text-4xl font-bold">${msg.answer}</div>`;
                 inputArea.classList.add('hidden');
                 buzzBtn.classList.remove('hidden');
                 buzzBtn.disabled = true;
@@ -95,6 +98,7 @@
                 inputArea.classList.add('hidden');
                 buzzBtn.disabled = false;
                 buzzBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                statusEl.innerText = `Connected as ${clientId}`;
             } else if (msg.type === 'error') {
                 alert(msg.message);
             }
@@ -103,9 +107,9 @@
         startBtn.onclick = () => {
             const topic = topicInput.value || "General Knowledge";
             ws.send(JSON.stringify({ type: 'start', topic: topic }));
-            clueEl.innerText = "Thinking of a topic...";
-            buzzBtn.disabled = false;
-            buzzBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            clueEl.innerText = "Curating diverse topics...";
+            buzzBtn.disabled = true;
+            buzzBtn.classList.add('opacity-50', 'cursor-not-allowed');
         };
 
         buzzBtn.onclick = () => {

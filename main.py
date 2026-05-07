@@ -1,7 +1,7 @@
 import os
 import json
 import asyncio
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from google import genai
@@ -17,74 +17,103 @@ if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not found in environment variables")
 
 client = genai.Client(api_key=GEMINI_API_KEY)
-MODEL_ID = "gemini-3.1-flash"
 
-SYSTEM_PROMPT = """
-You are the "AI Qbreader," an expert Quizbowl Game Master and Clue Writer. Your goal is to create intellectually stimulating, factually accurate, and properly "pyramided" clues.
+# Tiered Model Selection
+MODEL_ARCHITECT = "gemma-4-31b-it"       # High-entropy topic & fact generation
+MODEL_WRITER = "gemini-3-flash-preview" # Fast, structured clue writing
+MODEL_JUDGE = "gemini-2.5-flash-lite"     # Ultra-low latency validation
 
-### CORE CONCEPT: PYRAMIDING
-A pyramidal clue starts with the most obscure, difficult information and progresses toward the most common, easy information.
+SYSTEM_PROMPT_ARCHITECT = """
+You are the "Quizbowl Curator." Your goal is to generate a high-entropy, diverse list of topics for a Quizbowl game.
+When given a general topic (e.g., "Computer Science"), you must produce 50 distinct, non-overlapping specific entities, theorems, people, or concepts.
+For each entity, provide a "Fact Sheet": 3-5 bullet points of increasing obscurity (from very niche to very common).
 
-Structure of a clue:
-1. The Lead-In (Difficult): 2-3 sentences of highly specific, niche, or technical facts.
-2. The Bridge (Medium): 2-3 sentences of facts known to enthusiasts.
-3. The Giveaway (Easy): 1-2 sentences of iconic, widely known facts.
+Format:
+TOPIC: [Entity Name]
+FACTS:
+- [Niche Fact 1]
+- [Niche Fact 2]
+- [Common Fact 3]
+...
+(Repeat for 50 topics)
+"""
 
-### OPERATIONAL MODES
+SYSTEM_PROMPT_WRITER = """
+You are the "AI Qbreader," an expert Quizbowl Clue Writer.
+Your task is to take a Fact Sheet and turn it into a properly "pyramided" clue.
 
-#### MODE: GENERATE
-When asked to generate a clue for a [TOPIC]:
-- DO NOT mention the answer within the clue text.
-- Maintain a strict difficulty gradient (Hard -> Medium -> Easy).
-- Output the result in the following format:
-  ANSWER: [The precise answer]
-  CLUE: [The full pyramidal text]
+### PYRAMIDING RULES
+1. Start with the most obscure facts (The Lead-In).
+2. Move to enthusiast-level facts (The Bridge).
+3. End with the most iconic, widely known facts (The Giveaway).
+4. NEVER mention the answer within the clue text.
+5. No filler phrases ("This person was...", "The following is..."). Start directly with facts.
 
-#### MODE: VALIDATE
-When provided with an [ANSWER], a [USER_GUESS], and a [CLUE]:
-- Determine if the USER_GUESS is correct.
-- Be "Quizbowl Lenient": Accept common synonyms or slightly incomplete but unambiguous names.
-- Output only:
-  RESULT: [CORRECT/INCORRECT]
-  FEEDBACK: [Briefly explain why or "Perfect!"]
+Output format:
+ANSWER: [The precise answer]
+CLUE: [The full pyramidal text]
+"""
 
-### CONSTRAINTS
-- Factuality is paramount. Do not hallucinate.
-- No "filler" phrases like "This person was...". Start directly with the facts.
-- Ensure the "Giveaway" is at the very end.
+SYSTEM_PROMPT_JUDGE = """
+You are the "Quizbowl Judge." Determine if a USER_GUESS is conceptually correct for the target ANSWER.
+Be "Quizbowl Lenient": Accept common synonyms or slightly incomplete but unambiguous names.
+
+Output only:
+RESULT: [CORRECT/INCORRECT]
+FEEDBACK: [Briefly explain why or "Perfect!"]
 """
 
 class Brain:
-    async def generate_clue(self, topic: str):
-        prompt = f"MODE: GENERATE | TOPIC: {topic}"
-        response = client.models.generate_content(
-            model=MODEL_ID,
+    def __init__(self):
+        self.client = client
+
+    async def generate_topic_list(self, general_topic: str):
+        # Architect generates a diverse set of topics and facts
+        prompt = f"General Topic: {general_topic}. Generate 50 distinct Quizbowl topics with fact sheets."
+        response = self.client.models.generate_content(
+            model=MODEL_ARCHITECT,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT
-            )
+            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT_ARCHITECT)
+        )
+        
+        raw_text = response.text
+        topics = []
+        parts = raw_text.split("TOPIC:")
+        for part in parts[1:]:
+            lines = part.split("\n")
+            name = lines[0].strip()
+            facts = []
+            for line in lines[1:]:
+                if line.strip().startswith("-"):
+                    facts.append(line.strip("- ").strip())
+            topics.append({"name": name, "facts": "\n".join(facts)})
+        return topics
+
+    async def generate_clue_from_facts(self, topic_data: dict):
+        # Writer turns facts into a pyramidal clue
+        prompt = f"TOPIC: {topic_data['name']}\nFACTS: {topic_data['facts']}"
+        response = self.client.models.generate_content(
+            model=MODEL_WRITER,
+            contents=prompt,
+            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT_WRITER)
         )
         text = response.text
-        
         try:
-            answer_part = text.split("ANSWER:")[1].split("CLUE:")[0].strip()
-            clue_part = text.split("CLUE:")[1].strip()
-            return answer_part, clue_part
+            answer = text.split("ANSWER:")[1].split("CLUE:")[0].strip()
+            clue = text.split("CLUE:")[1].strip()
+            return answer, clue
         except IndexError:
-            print(f"Parsing error. Raw response: {text}")
-            return "Error", "Could not parse clue."
+            return "Error", "Could not parse clue from writer."
 
     async def validate_answer(self, answer: str, guess: str, clue: str):
-        prompt = f"MODE: VALIDATE | ANSWER: {answer} | USER_GUESS: {guess} | CLUE: {clue}"
-        response = client.models.generate_content(
-            model=MODEL_ID,
+        # Judge validates the guess
+        prompt = f"ANSWER: {answer} | USER_GUESS: {guess} | CLUE: {clue}"
+        response = self.client.models.generate_content(
+            model=MODEL_JUDGE,
             contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT
-            )
+            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT_JUDGE)
         )
         text = response.text
-        
         try:
             result = text.split("RESULT:")[1].split("FEEDBACK:")[0].strip()
             feedback = text.split("FEEDBACK:")[1].strip()
@@ -100,6 +129,10 @@ class GameState:
         self.current_answer = None
         self.current_clue = None
         self.streaming_task: Optional[asyncio.Task] = None
+        
+        # Topic Queue Infrastructure
+        self.topic_queue: List[Dict] = []
+        self.pregenerated_clues: asyncio.Queue = asyncio.Queue()
 
     async def connect(self, websocket: WebSocket):
         await websocket.accept()
@@ -146,7 +179,12 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await game.stop_streaming()
                 game.reset_buzzer()
                 
-                game.streaming_task = asyncio.create_task(stream_clue(client_id, topic))
+                # Reset queues for new topic
+                game.topic_queue = []
+                while not game.pregenerated_clues.empty():
+                    game.pregenerated_clues.get_nowait()
+                
+                game.streaming_task = asyncio.create_task(handle_game_loop(client_id, topic))
             
             elif message.get("type") == "buzz":
                 if not game.buzzer_locked:
@@ -179,12 +217,36 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
     except WebSocketDisconnect:
         game.disconnect(websocket)
 
-async def stream_clue(client_id: str, topic: str):
+async def background_generator():
+    """Fills the pregenerated_clues queue using the topic_queue."""
+    while True:
+        if game.topic_queue:
+            topic_data = game.topic_queue.pop(0)
+            answer, clue = await brain.generate_clue_from_facts(topic_data)
+            await game.pregenerated_clues.put((answer, clue))
+        else:
+            await asyncio.sleep(1)
+
+async def handle_game_loop(client_id: str, topic: str):
     try:
-        answer, clue = await brain.generate_clue(topic)
+        # 1. Architect generates the high-entropy list
+        await game.broadcast({"type": "status", "text": "Curating diverse topics..."})
+        topics = await brain.generate_topic_list(topic)
+        game.topic_queue = topics
+        
+        # Start background worker to fill the clue queue
+        bg_task = asyncio.create_task(background_generator())
+        
+        # 2. Get the first clue immediately
+        # We wait just a moment for the bg_generator to put at least one in
+        while game.pregenerated_clues.empty():
+            await asyncio.sleep(0.1)
+            
+        answer, clue = await game.pregenerated_clues.get()
         game.current_answer = answer
         game.current_clue = clue
         
+        # 3. Stream the clue
         sentences = clue.split(". ")
         for sentence in sentences:
             if game.buzzer_locked:
@@ -195,12 +257,14 @@ async def stream_clue(client_id: str, topic: str):
             
             await game.broadcast({"type": "clue_chunk", "text": s})
             await asyncio.sleep(2.5)
+        
+        bg_task.cancel()
             
     except asyncio.CancelledError:
         pass
     except Exception as e:
-        print(f"Error streaming clue: {e}")
-        await game.broadcast({"type": "error", "message": "AI failed to generate clue."})
+        print(f"Error in game loop: {e}")
+        await game.broadcast({"type": "error", "message": "AI failed to generate content."})
 
 if __name__ == "__main__":
     import uvicorn
