@@ -4,94 +4,101 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>qbowl-gen</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg:        #fbfaf7;
+            --bg:        #fafaf9;
             --panel:     #ffffff;
-            --ink:       #18181b;
-            --ink-2:     #52525b;
-            --ink-3:     #a1a1aa;
-            --rule:      #e7e5e4;
-            --rule-2:    #f4f4f0;
-            --accent:    #1f2937;
-            --accent-fg: #ffffff;
+            --ink:       #1a1a1a;
+            --ink-2:     #525252;
+            --ink-3:     #a1a1a1;
+            --rule:      #e5e5e5;
+            --rule-soft: #f1f1ef;
+            --accent:    #1a1a1a;
             --good:      #15803d;
             --bad:       #b91c1c;
             --warn:      #b45309;
             --good-bg:   #f0fdf4;
-            --good-bd:   #bbf7d0;
-            --bad-bg:    #fef2f2;
-            --bad-bd:    #fecaca;
             --warn-bg:   #fffbeb;
-            --warn-bd:   #fde68a;
-
-            --font-ui:   'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-            --font-read: 'Source Serif 4', 'Charter', 'Georgia', serif;
-            --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+            --bad-bg:    #fef2f2;
         }
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        * { scrollbar-width: thin; scrollbar-color: #d4d4d4 transparent; }
+        * {
+            scrollbar-width: thin;
+            scrollbar-color: #d4d4d4 transparent;
+        }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #d4d4d4; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #a3a3a3; }
 
-        body {
-            background: var(--bg);
-            color: var(--ink);
-            font-family: var(--font-ui);
+        html, body {
+            height: 100%;
+            font-family: -apple-system, BlinkMacSystemFont, system-ui, "Segoe UI", Helvetica, Arial, sans-serif;
             font-size: 14px;
             line-height: 1.5;
-            height: 100vh;
+            font-feature-settings: "tnum" 1;
+            background: var(--bg);
+            color: var(--ink);
+            -webkit-font-smoothing: antialiased;
+        }
+        body {
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            -webkit-font-smoothing: antialiased;
         }
 
-        /* ── Header ── */
+        button, input { font-family: inherit; font-size: inherit; color: inherit; }
+
+        /* ── Header ─────────────────────────────────────────── */
         header {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 12px 28px;
+            padding: 12px 24px;
             border-bottom: 1px solid var(--rule);
             flex-shrink: 0;
         }
-        .brand { font-weight: 700; font-size: 15px; letter-spacing: -0.02em; }
-        .brand .dot { color: var(--bad); }
+        .brand { font-weight: 600; font-size: 14px; }
+        .brand-dot {
+            display: inline-block;
+            width: 7px; height: 7px;
+            background: var(--ink-3);
+            border-radius: 50%;
+            margin: 0 2px 0 1px;
+            vertical-align: 2px;
+        }
+        .brand-dot.live { background: var(--good); }
         .header-right {
             display: flex;
             align-items: center;
-            gap: 18px;
-            font-size: 13px;
+            gap: 16px;
             color: var(--ink-2);
+            font-size: 13px;
         }
-        .me { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
-        .online { display: inline-flex; align-items: center; gap: 6px; }
-        .online-dot {
-            width: 7px; height: 7px;
-            background: var(--good);
-            border-radius: 50%;
+        .me { color: var(--ink); }
+        .reset {
+            color: var(--ink-3);
+            background: none;
+            border: none;
+            cursor: pointer;
+            padding: 4px 8px;
+            border-radius: 6px;
         }
+        .reset:hover { color: var(--ink); background: var(--rule-soft); }
 
-        /* ── Layout ── */
+        /* ── Layout ─────────────────────────────────────────── */
         .layout {
             flex: 1;
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 300px;
+            grid-template-columns: minmax(0, 1fr) 280px;
             overflow: hidden;
-            max-width: 1280px;
+            max-width: 1180px;
             width: 100%;
             margin: 0 auto;
         }
 
-        /* ── Main column ── */
+        /* ── Main column ────────────────────────────────────── */
         main {
             display: flex;
             flex-direction: column;
@@ -99,146 +106,188 @@
             border-right: 1px solid var(--rule);
         }
 
-        /* ── Topic bar (top, fixed) ── */
-        .topic-bar {
-            flex-shrink: 0;
-            padding: 16px 28px;
+        /* Topic row */
+        .topic-row {
             display: flex;
             gap: 8px;
             align-items: center;
+            padding: 16px 24px;
             border-bottom: 1px solid var(--rule);
+            flex-shrink: 0;
         }
-        .topic-bar .label {
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            font-weight: 600;
+        .topic-row .label {
+            font-size: 13px;
             color: var(--ink-3);
+            margin-right: 4px;
         }
+        .input {
+            background: var(--panel);
+            border: 1px solid var(--rule);
+            color: var(--ink);
+            padding: 8px 12px;
+            border-radius: 6px;
+            outline: none;
+            min-width: 0;
+        }
+        .input:focus { border-color: var(--ink-2); }
+        .input::placeholder { color: var(--ink-3); }
+        .input.flex { flex: 1; }
 
-        /* ── Question stream (scrollable middle) ── */
+        .btn {
+            background: var(--panel);
+            border: 1px solid var(--rule);
+            color: var(--ink);
+            padding: 8px 14px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .btn:hover { background: var(--rule-soft); }
+        .btn-primary {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+        .btn-primary:hover { background: #000; }
+
+        /* Stream — vertical list of question cards.
+           Active card sits at the top; past cards collapse beneath. */
         .stream {
             flex: 1;
             overflow-y: auto;
-            padding: 20px 28px 8px;
+            padding: 18px 24px;
         }
         .stream-empty {
             color: var(--ink-3);
-            font-size: 14px;
             text-align: center;
-            padding: 60px 20px;
-            font-family: var(--font-read);
-            font-size: 16px;
-            font-style: normal;
+            padding: 64px 20px;
+            font-size: 14px;
         }
 
-        /* ── Question card ── */
         .qcard {
             background: var(--panel);
             border: 1px solid var(--rule);
-            border-radius: 10px;
-            padding: 16px 22px 18px;
-            margin-bottom: 14px;
-            transition: border-color 200ms, background 200ms;
+            border-radius: 6px;
+            padding: 14px 18px;
+            margin-bottom: 10px;
         }
-        .qcard[data-state="reading"] {
-            border-color: #d4d4d8;
-            box-shadow: 0 0 0 3px #f4f4f5;
-        }
-        .qcard[data-state="locked"] {
-            border-color: var(--bad-bd);
-            background: #fef9f9;
-        }
-        .qcard[data-state="revealed"] {
-            background: var(--good-bg);
-            border-color: var(--good-bd);
-        }
-        .qcard[data-state="dead"] {
-            background: var(--warn-bg);
-            border-color: var(--warn-bd);
-        }
+        .qcard[data-state="locked"]   { background: var(--bad-bg); }
+        .qcard[data-state="revealed"] { background: var(--good-bg); }
+        .qcard[data-state="dead"]     { background: var(--warn-bg); }
 
-        .qcard-meta {
+        .qhead {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            font-weight: 600;
+            font-size: 12px;
             color: var(--ink-3);
-            margin-bottom: 10px;
+            margin-bottom: 8px;
         }
-        .qnum { color: var(--ink-2); font-family: var(--font-mono); font-size: 11px; }
+        .qhead .qnum { color: var(--ink-2); }
         .qstate.reading  { color: var(--ink-2); }
         .qstate.locked   { color: var(--bad); }
         .qstate.revealed { color: var(--good); }
         .qstate.dead     { color: var(--warn); }
 
         .qbody {
-            font-family: var(--font-read);
-            font-size: 17px;
-            line-height: 1.7;
+            font-size: 16px;
+            line-height: 1.65;
             color: var(--ink);
         }
         .word-read   { color: var(--ink); }
-        .word-unread { color: #d4d4d8; }
+        .word-unread { color: var(--ink-3); }
 
         .qresult {
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px dashed var(--rule);
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid var(--rule);
             display: flex;
             align-items: baseline;
             gap: 10px;
             flex-wrap: wrap;
             font-size: 13px;
-        }
-        .qresult .answer-label {
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--ink-3);
-            font-weight: 700;
-        }
-        .qresult .answer {
-            font-weight: 600;
-            font-size: 14px;
-            color: var(--ink);
-        }
-        .qresult .winner-meta {
-            margin-left: auto;
-            font-family: var(--font-mono);
-            font-size: 12px;
             color: var(--ink-2);
         }
-        .qresult .winner-meta .who { color: var(--ink); }
-
-        /* ── Action zone (fixed at bottom of main) ── */
-        .action-zone {
-            flex-shrink: 0;
-            padding: 14px 28px 16px;
-            border-top: 1px solid var(--rule);
-            background: var(--bg);
+        .qresult .answer {
+            color: var(--ink);
+            font-weight: 600;
         }
-        .action-row {
+        .qresult .meta {
+            margin-left: auto;
+            color: var(--ink-2);
+        }
+
+        /* Collapsed past-question card: a single compact line */
+        .qcard.collapsed {
+            padding: 8px 14px;
+            margin-bottom: 6px;
+            cursor: pointer;
+        }
+        .qcard.collapsed .qhead { margin-bottom: 0; }
+        .qcard.collapsed .qbody,
+        .qcard.collapsed .qresult { display: none; }
+        .qcard.collapsed .qsummary {
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            font-size: 13px;
+            color: var(--ink-2);
+        }
+        .qcard.collapsed .qsummary .answer {
+            color: var(--ink);
+            font-weight: 600;
+        }
+        .qcard.collapsed .qsummary .meta {
+            margin-left: auto;
+            color: var(--ink-3);
+            font-size: 12px;
+        }
+        .qcard:not(.collapsed) .qsummary { display: none; }
+
+        /* Action strip — minimal, pinned at the bottom */
+        .action {
+            flex-shrink: 0;
+            padding: 12px 24px 16px;
+            border-top: 1px solid var(--rule);
+            min-height: 56px;
+        }
+        .action-line {
             display: flex;
             gap: 10px;
             align-items: center;
-            min-height: 42px;
+            min-height: 36px;
         }
-        .action-row .input { flex: 1; font-size: 15px; }
-        .action-hint {
-            font-size: 12px;
-            color: var(--ink-3);
-            font-family: var(--font-mono);
+        .hint {
+            color: var(--ink-2);
+            font-size: 13px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+            user-select: none;
+            padding: 6px 0;
         }
+        .hint:hover { color: var(--ink); }
+        .hint .key {
+            font-size: 11px;
+            font-weight: 500;
+            padding: 2px 7px;
+            border-radius: 4px;
+            background: var(--panel);
+            border: 1px solid var(--rule);
+            color: var(--ink);
+            min-width: 22px;
+            text-align: center;
+        }
+        .hint:hover .key { background: var(--rule-soft); }
+        .hint.muted { cursor: default; color: var(--ink-3); }
+        .hint.muted:hover { color: var(--ink-3); }
+        .hint.muted .key { color: var(--ink-3); }
 
-        .timer-track {
+        .timer {
             margin-top: 10px;
-            height: 3px;
-            background: var(--rule-2);
-            border-radius: 2px;
+            height: 2px;
+            background: var(--rule-soft);
+            border-radius: 1px;
             overflow: hidden;
         }
         .timer-fill {
@@ -248,79 +297,9 @@
             transition: width 100ms linear;
         }
 
-        .waiting {
-            font-size: 14px;
-            color: var(--ink-2);
-            padding: 8px 0;
-            font-family: var(--font-ui);
-        }
-        .waiting .who { color: var(--ink); font-weight: 600; font-family: var(--font-mono); }
+        .answer-input { flex: 1; }
 
-        /* ── Inputs ── */
-        .input {
-            background: var(--panel);
-            border: 1px solid var(--rule);
-            color: var(--ink);
-            padding: 9px 12px;
-            border-radius: 6px;
-            font-size: 14px;
-            font-family: inherit;
-            outline: none;
-            transition: border-color 100ms;
-        }
-        .input:focus { border-color: var(--ink-2); }
-        .input::placeholder { color: var(--ink-3); }
-
-        /* ── Buttons ── */
-        .btn {
-            background: var(--panel);
-            border: 1px solid var(--rule);
-            color: var(--ink);
-            padding: 9px 16px;
-            border-radius: 6px;
-            font-size: 13px;
-            font-weight: 500;
-            font-family: inherit;
-            cursor: pointer;
-            white-space: nowrap;
-            transition: background 100ms, border-color 100ms;
-        }
-        .btn:hover { background: #f8f7f3; border-color: var(--ink-3); }
-        .btn-primary {
-            background: var(--accent);
-            color: var(--accent-fg);
-            border-color: var(--accent);
-        }
-        .btn-primary:hover { background: #000; }
-        .btn-ghost {
-            border-color: transparent;
-            color: var(--ink-2);
-            background: transparent;
-        }
-        .btn-ghost:hover { color: var(--ink); background: var(--rule-2); }
-        .buzz-btn {
-            flex: 1;
-            padding: 11px;
-            background: var(--accent);
-            color: var(--accent-fg);
-            border: 1px solid var(--accent);
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 14px;
-            font-family: inherit;
-            cursor: pointer;
-            letter-spacing: 0.02em;
-            transition: background 80ms;
-        }
-        .buzz-btn:hover { background: #000; }
-        .buzz-btn .kbd-hint {
-            margin-left: 8px;
-            font-weight: 400;
-            font-size: 12px;
-            opacity: 0.65;
-        }
-
-        /* ── Sidebar ── */
+        /* ── Sidebar ────────────────────────────────────────── */
         aside {
             display: flex;
             flex-direction: column;
@@ -339,206 +318,140 @@
         }
         .panel-title {
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            font-size: 11px;
+            align-items: baseline;
+            font-size: 12px;
             color: var(--ink-3);
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            font-weight: 700;
             margin-bottom: 12px;
         }
-        .panel-title .count {
-            font-family: var(--font-mono);
-            font-size: 11px;
-        }
 
-        /* Players */
-        .players-list { display: flex; flex-direction: column; gap: 6px; }
+        .players-list { display: flex; flex-direction: column; gap: 4px; }
         .player-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 3px 0;
             font-size: 13px;
+            padding: 2px 0;
         }
-        .player-name {
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: var(--ink);
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            flex: 1;
-        }
-        .player-name.me::after {
-            content: 'you';
-            margin-left: 6px;
-            font-size: 10px;
+        .player-row .name { color: var(--ink); }
+        .player-row .name.me::after {
+            content: ' you';
             color: var(--ink-3);
-            font-family: var(--font-ui);
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            font-weight: 600;
+            font-size: 11px;
         }
-        .player-score {
-            font-family: var(--font-mono);
-            font-size: 13px;
-            font-weight: 600;
-            color: var(--ink-2);
-            margin-left: 12px;
-        }
-        .player-score.pos { color: var(--good); }
-        .player-score.neg { color: var(--bad); }
+        .player-row .score { color: var(--ink-2); font-weight: 500; }
+        .player-row .score.pos { color: var(--good); }
+        .player-row .score.neg { color: var(--bad); }
 
-        /* Activity */
         .activity-list {
             flex: 1;
             overflow-y: auto;
             margin: 0 -22px;
             padding: 0 22px;
+            font-size: 13px;
         }
         .ev {
-            padding: 8px 0;
-            border-bottom: 1px solid var(--rule-2);
-            font-size: 12px;
-            line-height: 1.45;
+            padding: 6px 0;
             color: var(--ink-2);
+            border-bottom: 1px solid var(--rule-soft);
         }
         .ev:last-child { border-bottom: none; }
-        .ev-tag {
-            font-size: 9px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--ink-3);
-            display: inline-block;
-            margin-right: 8px;
-            min-width: 38px;
-        }
-        .ev .who { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
-        .ev.correct .ev-tag { color: var(--good); }
-        .ev.wrong   .ev-tag { color: var(--warn); }
-        .ev.dead    .ev-tag { color: var(--warn); }
-        .ev.lock    .ev-tag { color: var(--bad); }
-        .ev.join    .ev-tag { color: var(--ink-3); }
-
-        /* ── Footer hints ── */
-        .hints {
-            grid-column: 1 / -1;
-            padding: 8px 28px;
-            border-top: 1px solid var(--rule);
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            font-size: 11px;
-            color: var(--ink-3);
-            flex-shrink: 0;
-        }
-        .hints .keys { display: flex; gap: 14px; }
-        .hints .keys span { display: inline-flex; gap: 4px; align-items: center; }
-        kbd {
-            font-family: var(--font-mono);
-            font-size: 10px;
-            padding: 2px 5px;
-            border-radius: 3px;
-            background: var(--panel);
-            border: 1px solid var(--rule);
-            color: var(--ink-2);
-            font-weight: 500;
-        }
-        .status {
-            font-family: var(--font-mono);
-            font-size: 11px;
-            color: var(--ink-3);
-        }
+        .ev .who { color: var(--ink); }
+        .ev.correct .who { color: var(--good); }
+        .ev.wrong .who   { color: var(--warn); }
+        .ev.dead .who    { color: var(--warn); }
+        .ev.lock .who    { color: var(--bad); }
+        .ev.join .who    { color: var(--ink-2); }
 
         .hidden { display: none !important; }
 
-        @media (max-width: 900px) {
+        @media (max-width: 880px) {
             .layout { grid-template-columns: 1fr; }
             aside { display: none; }
-            .hints { grid-column: 1; }
         }
     </style>
 </head>
 <body>
 
 <header>
-    <span class="brand">qbowl<span class="dot">·</span>gen</span>
+    <span class="brand">qbowl<span class="brand-dot" id="conn-dot"></span>gen</span>
     <div class="header-right">
-        <span class="online"><span class="online-dot"></span><span id="online-count">1</span> online</span>
+        <span><span id="online-count">1</span> online</span>
         <span class="me" id="me-id">…</span>
-        <button class="btn btn-ghost" id="reset-btn">Reset</button>
+        <button class="reset" id="reset-btn">reset</button>
     </div>
 </header>
 
 <div class="layout">
     <main>
-        <div class="topic-bar">
+        <div class="topic-row">
             <span class="label">Topic</span>
-            <input id="topic-input" class="input" type="text" style="flex:1"
+            <input id="topic-input" class="input flex" type="text"
                    placeholder="ancient rome, jazz, linear algebra…">
             <button id="start-btn" class="btn btn-primary">Start round</button>
         </div>
 
         <div class="stream" id="stream">
             <div class="stream-empty" id="stream-empty">
-                Pick a topic and start a round to begin.
+                Type a topic and start a round.
             </div>
         </div>
 
-        <div class="action-zone">
-            <div class="action-row" id="action-row">
-                <span class="action-hint" id="action-idle">Press <kbd>Enter</kbd> after typing a topic to begin.</span>
-                <button id="buzz-btn" class="buzz-btn hidden">
-                    Buzz<span class="kbd-hint">Space</span>
-                </button>
-                <span id="waiting" class="waiting hidden"></span>
-                <input id="answer-input" type="text" class="input hidden"
-                       placeholder="Your answer…" autocomplete="off">
-                <button id="submit-btn" class="btn btn-primary hidden">Submit</button>
-                <button id="next-btn" class="btn btn-primary hidden">Next question →</button>
+        <div class="action">
+            <div class="action-line" id="action-line">
+                <span class="hint muted" id="hint-idle">
+                    <span class="key">⏎</span>
+                    start a round
+                </span>
+                <span class="hint" id="hint-buzz">
+                    <span class="key">space</span>
+                    buzz in
+                </span>
+                <span class="hint muted" id="hint-waiting"></span>
+                <input id="answer-input" type="text" class="input answer-input hidden"
+                       placeholder="type your answer…" autocomplete="off">
+                <span class="hint" id="hint-next">
+                    <span class="key">N</span>
+                    next question
+                </span>
+                <span class="hint muted" id="hint-loading">
+                    <span class="key">…</span>
+                    preparing
+                </span>
             </div>
-            <div id="timer-track" class="timer-track hidden">
-                <div id="timer-fill" class="timer-fill"></div>
+            <div class="timer hidden" id="timer">
+                <div class="timer-fill" id="timer-fill"></div>
             </div>
         </div>
     </main>
 
     <aside>
         <div class="panel">
-            <div class="panel-title">Players <span class="count" id="players-count">0</span></div>
+            <div class="panel-title">
+                <span>Players</span>
+                <span id="players-count">0</span>
+            </div>
             <div class="players-list" id="players-list"></div>
         </div>
         <div class="panel">
-            <div class="panel-title">Activity</div>
+            <div class="panel-title"><span>Activity</span></div>
             <div class="activity-list" id="activity"></div>
         </div>
     </aside>
-
-    <div class="hints">
-        <div class="keys">
-            <span><kbd>Space</kbd> buzz</span>
-            <span><kbd>N</kbd> next</span>
-            <span><kbd>Enter</kbd> submit / start</span>
-        </div>
-        <span class="status" id="status">connecting…</span>
-    </div>
 </div>
 
 <script>
 "use strict";
 
 // ── State ────────────────────────────────────────────────────────
-// idle | loading | reading | locked | revealed
-let state = 'idle';
+let state = 'idle';         // idle | loading | reading | locked | revealed
 let isBuzzer = false;
 let timerInterval = null;
-let currentCard = null;     // active question card element
-let currentBody = null;     // its .qbody element
-let currentWordsRead = 0;   // words received in current question
-const players = new Map();  // id -> { score }
+let currentCard = null;
+let currentBody = null;
+let currentWordsRead = 0;
+let currentQNum = 0;
+const players = new Map();
 
 const clientId = (() => {
     let id = localStorage.getItem('qb_cid');
@@ -553,80 +466,101 @@ const $ = id => document.getElementById(id);
 const els = {
     me: $('me-id'),
     onlineCount: $('online-count'),
+    connDot: $('conn-dot'),
     topic: $('topic-input'),
     startBtn: $('start-btn'),
-    nextBtn: $('next-btn'),
-    buzzBtn: $('buzz-btn'),
-    waiting: $('waiting'),
-    answer: $('answer-input'),
-    submitBtn: $('submit-btn'),
-    actionIdle: $('action-idle'),
-    timerTrack: $('timer-track'),
-    timerFill: $('timer-fill'),
     stream: $('stream'),
     streamEmpty: $('stream-empty'),
-    playersCount: $('players-count'),
+    answer: $('answer-input'),
+    hintIdle: $('hint-idle'),
+    hintBuzz: $('hint-buzz'),
+    hintWaiting: $('hint-waiting'),
+    hintNext: $('hint-next'),
+    hintLoading: $('hint-loading'),
+    timer: $('timer'),
+    timerFill: $('timer-fill'),
     playersList: $('players-list'),
+    playersCount: $('players-count'),
     activity: $('activity'),
     resetBtn: $('reset-btn'),
-    status: $('status'),
 };
 els.me.textContent = clientId;
+
+// Action-zone modes are mutually exclusive
+function action(mode, opts = {}) {
+    [els.hintIdle, els.hintBuzz, els.hintWaiting,
+     els.answer, els.hintNext, els.hintLoading, els.timer].forEach(e => e.classList.add('hidden'));
+
+    if (mode === 'idle')    els.hintIdle.classList.remove('hidden');
+    if (mode === 'reading') els.hintBuzz.classList.remove('hidden');
+    if (mode === 'next')    els.hintNext.classList.remove('hidden');
+    if (mode === 'loading') els.hintLoading.classList.remove('hidden');
+    if (mode === 'waiting') {
+        els.hintWaiting.innerHTML = `<span class="key">·</span><span class="who">${esc(opts.who)}</span> answering`;
+        els.hintWaiting.classList.remove('hidden');
+    }
+    if (mode === 'answer') {
+        els.answer.classList.remove('hidden');
+        els.answer.value = '';
+        els.answer.focus();
+        els.timer.classList.remove('hidden');
+        startTimer(10000);
+    }
+}
 
 // ── WebSocket ────────────────────────────────────────────────────
 const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
 const ws = new WebSocket(`${proto}//${location.host}/ws/${clientId}`);
 
-ws.onopen  = () => setStatus('connected');
-ws.onclose = () => setStatus('disconnected');
+ws.onopen  = () => { els.connDot.classList.add('live'); };
+ws.onclose = () => { els.connDot.classList.remove('live'); };
 
 ws.onmessage = ({ data }) => {
     const msg = JSON.parse(data);
 
     switch (msg.type) {
 
-    case 'status':
-        setStatus(msg.text);
-        break;
-
     case 'state_sync':
-        if (msg.players) {
-            msg.players.forEach(id => {
-                if (!players.has(id)) players.set(id, { score: 0 });
-            });
-        }
+        if (msg.players) msg.players.forEach(id => {
+            if (!players.has(id)) players.set(id, { score: 0 });
+        });
         if (msg.scores) ingestScores(msg.scores);
         renderPlayers();
-        // Late-join catch-up with active question
         if (msg.partial_clue) {
+            // Late-join mid-question
+            currentQNum = msg.question_number || 0;
             state = msg.locked ? 'locked' : 'reading';
-            currentCard = createQuestionCard(msg.question_number || '?');
+            currentCard = createActiveCard(currentQNum);
             currentBody = currentCard.querySelector('.qbody');
             currentWordsRead = msg.words_read || 0;
-            renderClueWords(msg.partial_clue.split(' '), 'word-read');
+            const words = msg.partial_clue.split(' ');
+            currentBody.textContent = '';
+            words.forEach((w, i) => {
+                const s = document.createElement('span');
+                s.className = 'word-read';
+                s.textContent = (i ? ' ' : '') + w;
+                currentBody.appendChild(s);
+            });
             if (msg.locked) {
                 setCardState(currentCard, 'locked', `${msg.winner} answering`);
-                setActionLocked(msg.winner);
+                action(msg.winner === clientId ? 'answer' : 'waiting', { who: msg.winner });
             } else {
-                setCardState(currentCard, 'reading', 'reading');
-                setActionReading();
+                action('reading');
             }
-            scrollStreamToBottom();
         }
         break;
 
     case 'question_start':
-        // Server announces a new question is starting; create card now
         startNewQuestion(msg.question_number);
         break;
 
     case 'clue_chunk':
         if (state === 'idle') break;
-        if (!currentCard) startNewQuestion(null);
+        if (!currentCard) startNewQuestion(currentQNum + 1);
         if (state !== 'reading') {
             state = 'reading';
             setCardState(currentCard, 'reading', 'reading');
-            setActionReading();
+            action('reading');
         }
         appendWord(msg.text);
         currentWordsRead++;
@@ -635,23 +569,21 @@ ws.onmessage = ({ data }) => {
     case 'lock':
         state = 'locked';
         isBuzzer = (msg.winner === clientId);
-        if (currentCard) setCardState(currentCard, 'locked', `${esc(msg.winner)} answering`);
-        setActionLocked(msg.winner);
-        addEvent('lock', 'BUZZ', `<span class="who">${esc(msg.winner)}</span>`);
-        setStatus(`${msg.winner} buzzed`);
+        if (currentCard) setCardState(currentCard, 'locked', `${msg.winner} answering`);
+        action(isBuzzer ? 'answer' : 'waiting', { who: msg.winner });
+        addEvent('lock', `<span class="who">${esc(msg.winner)}</span> buzzed`);
         break;
 
     case 'wrong_buzz':
-        // No feedback at all — just announce the fact.
+        // No feedback transmitted, by design.
         state = 'reading';
         isBuzzer = false;
         stopTimer();
         if (currentCard) setCardState(currentCard, 'reading', 'reading');
-        setActionReading();
-        addEvent('wrong', 'WRONG',
-            `<span class="who">${esc(msg.guesser)}</span> said “${esc(msg.guess) || '—'}”`);
+        action('reading');
+        addEvent('wrong',
+            `<span class="who">${esc(msg.guesser)}</span> said “${esc(msg.guess) || '—'}” — wrong`);
         if (msg.scores) ingestScores(msg.scores);
-        setStatus('reading…');
         break;
 
     case 'reveal':
@@ -659,29 +591,29 @@ ws.onmessage = ({ data }) => {
         isBuzzer = false;
         stopTimer();
         if (currentCard) {
-            setCardState(currentCard, 'revealed', '✓ correct');
+            setCardState(currentCard, 'revealed', 'revealed');
             renderReadUnread(msg.full_clue);
-            attachResult(currentCard, 'revealed', msg.answer,
-                `<span class="who">${esc(msg.winner)}</span> said “${esc(msg.guess)}” ✓`);
+            attachResult(currentCard, msg.answer,
+                `<span class="who">${esc(msg.winner)}</span> · “${esc(msg.guess)}”`);
+            setSummary(currentCard, msg.answer, `${msg.winner} ✓`);
         }
-        setActionRevealed();
-        addEvent('correct', 'CORRECT',
-            `<span class="who">${esc(msg.winner)}</span> · <strong>${esc(msg.answer)}</strong>`);
+        action('next');
+        addEvent('correct',
+            `<span class="who">${esc(msg.winner)}</span> · ${esc(msg.answer)}`);
         if (msg.scores) ingestScores(msg.scores);
-        setStatus(`✓ ${msg.answer}`);
         break;
 
     case 'question_dead':
         state = 'revealed';
         stopTimer();
         if (currentCard) {
-            setCardState(currentCard, 'dead', '— dead');
+            setCardState(currentCard, 'dead', 'dead');
             if (msg.full_clue) renderReadUnread(msg.full_clue);
-            attachResult(currentCard, 'dead', msg.answer, 'no correct buzz');
+            attachResult(currentCard, msg.answer, 'no correct buzz');
+            setSummary(currentCard, msg.answer, 'dead');
         }
-        setActionRevealed();
-        addEvent('dead', 'DEAD', `<strong>${esc(msg.answer)}</strong>`);
-        setStatus(`— ${msg.answer}`);
+        action('next');
+        addEvent('dead', `dead · ${esc(msg.answer)}`);
         break;
 
     case 'reset':
@@ -693,7 +625,7 @@ ws.onmessage = ({ data }) => {
         renderPlayers();
         els.onlineCount.textContent = msg.count;
         if (msg.player !== clientId) {
-            addEvent('join', 'JOIN', `<span class="who">${esc(msg.player)}</span>`);
+            addEvent('join', `<span class="who">${esc(msg.player)}</span> joined`);
         }
         break;
 
@@ -701,65 +633,88 @@ ws.onmessage = ({ data }) => {
         players.delete(msg.player);
         renderPlayers();
         els.onlineCount.textContent = msg.count;
-        addEvent('join', 'LEAVE', `<span class="who">${esc(msg.player)}</span>`);
+        addEvent('join', `<span class="who">${esc(msg.player)}</span> left`);
         break;
 
     case 'error':
-        setStatus('error: ' + msg.message);
         if (state === 'reading' || state === 'loading') {
             state = 'idle';
-            setActionIdle('Round complete. Pick a new topic to start another.');
+            action('idle');
         }
+        addEvent('join', `error · ${esc(msg.message)}`);
         break;
     }
 };
 
 // ── Question cards ───────────────────────────────────────────────
 function startNewQuestion(qnum) {
+    // Collapse the previous active card before adding the new one
+    if (currentCard) currentCard.classList.add('collapsed');
     state = 'reading';
-    currentCard = createQuestionCard(qnum);
+    currentQNum = qnum || (currentQNum + 1);
+    currentCard = createActiveCard(currentQNum);
     currentBody = currentCard.querySelector('.qbody');
     currentWordsRead = 0;
-    setCardState(currentCard, 'reading', 'reading');
-    setActionReading();
-    scrollStreamToBottom();
+    action('reading');
+    els.stream.scrollTop = 0; // active card is at the top — keep view there
 }
 
-function createQuestionCard(qnum) {
-    els.streamEmpty.classList.add('hidden');
+function createActiveCard(qnum) {
+    if (els.streamEmpty.parentNode) els.streamEmpty.remove();
     const card = document.createElement('div');
     card.className = 'qcard';
     card.dataset.state = 'reading';
     card.innerHTML = `
-        <div class="qcard-meta">
-            <span class="qnum">Question ${qnum ?? '—'}</span>
+        <div class="qhead">
+            <span class="qnum">Question ${qnum || '—'}</span>
             <span class="qstate reading">reading</span>
         </div>
         <div class="qbody"></div>
-    `;
-    els.stream.appendChild(card);
+        <div class="qsummary"></div>`;
+    // Active card always at the top of the stream
+    els.stream.insertBefore(card, els.stream.firstChild);
+    // Click on a collapsed card toggles expansion
+    card.addEventListener('click', e => {
+        // Only react to clicks when collapsed
+        if (card.classList.contains('collapsed')) {
+            // Expand inline (tap to peek). Click again to recollapse.
+            card.classList.remove('collapsed');
+            // Recollapse on next click anywhere
+            const onAway = ev => {
+                if (!card.contains(ev.target)) {
+                    card.classList.add('collapsed');
+                    document.removeEventListener('click', onAway, true);
+                }
+            };
+            setTimeout(() => document.addEventListener('click', onAway, true), 0);
+        }
+    });
     return card;
 }
 
-function setCardState(card, stateName, label) {
-    card.dataset.state = stateName;
+function setCardState(card, name, label) {
+    card.dataset.state = name;
     const stateEl = card.querySelector('.qstate');
-    stateEl.className = 'qstate ' + stateName;
+    stateEl.className = 'qstate ' + name;
     stateEl.textContent = label;
 }
 
-function attachResult(card, kind, answer, metaHTML) {
+function attachResult(card, answer, metaHTML) {
     let res = card.querySelector('.qresult');
     if (!res) {
         res = document.createElement('div');
         res.className = 'qresult';
-        card.appendChild(res);
+        // Insert before .qsummary if present
+        const sum = card.querySelector('.qsummary');
+        if (sum) card.insertBefore(res, sum); else card.appendChild(res);
     }
-    res.innerHTML = `
-        <span class="answer-label">Answer</span>
-        <span class="answer">${esc(answer)}</span>
-        <span class="winner-meta">${metaHTML}</span>
-    `;
+    res.innerHTML = `<span>Answer</span><span class="answer">${esc(answer)}</span><span class="meta">${metaHTML}</span>`;
+}
+
+function setSummary(card, answer, metaText) {
+    const sum = card.querySelector('.qsummary');
+    if (!sum) return;
+    sum.innerHTML = `<span class="qnum">Q${currentQNum}</span><span class="answer">${esc(answer)}</span><span class="meta">${esc(metaText)}</span>`;
 }
 
 function appendWord(word) {
@@ -768,18 +723,6 @@ function appendWord(word) {
     s.className = 'word-read';
     s.textContent = (currentBody.children.length ? ' ' : '') + word;
     currentBody.appendChild(s);
-    scrollStreamToBottom();
-}
-
-function renderClueWords(words, cls) {
-    if (!currentBody) return;
-    currentBody.textContent = '';
-    words.forEach((w, i) => {
-        const s = document.createElement('span');
-        s.className = cls;
-        s.textContent = (i ? ' ' : '') + w;
-        currentBody.appendChild(s);
-    });
 }
 
 function renderReadUnread(fullClue) {
@@ -794,57 +737,7 @@ function renderReadUnread(fullClue) {
     });
 }
 
-function scrollStreamToBottom() {
-    // Smart-scroll: only auto-scroll if user is already near the bottom.
-    const distance = els.stream.scrollHeight - els.stream.scrollTop - els.stream.clientHeight;
-    if (distance < 120) {
-        els.stream.scrollTop = els.stream.scrollHeight;
-    }
-}
-
-// ── Action zone ──────────────────────────────────────────────────
-function hideAllAction() {
-    els.actionIdle.classList.add('hidden');
-    els.buzzBtn.classList.add('hidden');
-    els.waiting.classList.add('hidden');
-    els.answer.classList.add('hidden');
-    els.submitBtn.classList.add('hidden');
-    els.nextBtn.classList.add('hidden');
-    els.timerTrack.classList.add('hidden');
-}
-
-function setActionIdle(text) {
-    hideAllAction();
-    els.actionIdle.textContent = text || 'Press Enter after typing a topic to begin.';
-    els.actionIdle.classList.remove('hidden');
-}
-
-function setActionReading() {
-    hideAllAction();
-    els.buzzBtn.classList.remove('hidden');
-}
-
-function setActionLocked(winner) {
-    hideAllAction();
-    if (winner === clientId) {
-        els.answer.classList.remove('hidden');
-        els.submitBtn.classList.remove('hidden');
-        els.timerTrack.classList.remove('hidden');
-        els.answer.value = '';
-        els.answer.focus();
-        startTimer(10000);
-    } else {
-        els.waiting.innerHTML = `<span class="who">${esc(winner)}</span> is answering…`;
-        els.waiting.classList.remove('hidden');
-    }
-}
-
-function setActionRevealed() {
-    hideAllAction();
-    els.nextBtn.classList.remove('hidden');
-}
-
-// ── Players ──────────────────────────────────────────────────────
+// ── Players + activity ──────────────────────────────────────────
 function ingestScores(scores) {
     Object.entries(scores).forEach(([id, sc]) => {
         if (players.has(id)) players.get(id).score = sc;
@@ -856,32 +749,31 @@ function renderPlayers() {
     els.playersCount.textContent = players.size;
     els.playersList.innerHTML = '';
     if (players.size === 0) {
-        els.playersList.innerHTML = '<div style="color:var(--ink-3);font-size:12px;">no one yet</div>';
+        els.playersList.innerHTML = '<div style="color:var(--ink-3);font-size:13px;">no one yet</div>';
         return;
     }
     Array.from(players.entries())
         .sort((a, b) => b[1].score - a[1].score)
         .forEach(([id, { score }]) => {
-            const row = document.createElement('div');
-            row.className = 'player-row';
             const cls = score > 0 ? 'pos' : score < 0 ? 'neg' : '';
             const me = id === clientId ? ' me' : '';
+            const row = document.createElement('div');
+            row.className = 'player-row';
             row.innerHTML = `
-                <span class="player-name${me}">${esc(id)}</span>
-                <span class="player-score ${cls}">${score > 0 ? '+' : ''}${score}</span>`;
+                <span class="name${me}">${esc(id)}</span>
+                <span class="score ${cls}">${score > 0 ? '+' : ''}${score}</span>`;
             els.playersList.appendChild(row);
         });
 }
 
-// ── Activity ─────────────────────────────────────────────────────
-function addEvent(kind, tag, html) {
+function addEvent(kind, html) {
     const el = document.createElement('div');
     el.className = 'ev ' + kind;
-    el.innerHTML = `<span class="ev-tag">${tag}</span>${html}`;
+    el.innerHTML = html;
     els.activity.insertBefore(el, els.activity.firstChild);
 }
 
-// ── Timer ────────────────────────────────────────────────────────
+// ── Timer ───────────────────────────────────────────────────────
 function startTimer(ms) {
     stopTimer();
     const t0 = Date.now();
@@ -900,39 +792,37 @@ function stopTimer() {
     els.timerFill.style.width = '0%';
 }
 
-// ── Misc helpers ─────────────────────────────────────────────────
-function setStatus(text) { els.status.textContent = text; }
-
+// ── Helpers ─────────────────────────────────────────────────────
 function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({
         '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     })[c]);
 }
 
-// ── Game actions ─────────────────────────────────────────────────
+// ── Game actions ────────────────────────────────────────────────
 function startGame() {
     const topic = els.topic.value.trim() || 'General Knowledge';
     ws.send(JSON.stringify({ type: 'start', topic }));
     state = 'loading';
-    // Clear questions list for fresh round
     els.stream.innerHTML = '';
-    els.stream.appendChild(els.streamEmpty);
     els.streamEmpty.textContent = 'Curating topics…';
-    els.streamEmpty.classList.remove('hidden');
+    els.stream.appendChild(els.streamEmpty);
     currentCard = null;
     currentBody = null;
     currentWordsRead = 0;
-    setActionIdle('Generating questions…');
+    currentQNum = 0;
+    action('loading');
     els.activity.innerHTML = '';
 }
 
 function goNext() {
     ws.send(JSON.stringify({ type: 'next' }));
     state = 'loading';
+    if (currentCard) currentCard.classList.add('collapsed');
     currentCard = null;
     currentBody = null;
     currentWordsRead = 0;
-    setActionIdle('Loading next question…');
+    action('loading');
 }
 
 function buzz() {
@@ -951,26 +841,23 @@ function resetUI() {
     currentCard = null;
     currentBody = null;
     currentWordsRead = 0;
+    currentQNum = 0;
     stopTimer();
     els.stream.innerHTML = '';
+    els.streamEmpty.textContent = 'Type a topic and start a round.';
     els.stream.appendChild(els.streamEmpty);
-    els.streamEmpty.textContent = 'Pick a topic and start a round to begin.';
-    els.streamEmpty.classList.remove('hidden');
     els.activity.innerHTML = '';
     players.forEach(p => { p.score = 0; });
     renderPlayers();
-    setActionIdle();
-    setStatus('');
+    action('idle');
 }
 
-// ── Wire up ──────────────────────────────────────────────────────
+// ── Wire-up ─────────────────────────────────────────────────────
 els.startBtn.addEventListener('click', startGame);
-els.nextBtn.addEventListener('click', goNext);
-els.buzzBtn.addEventListener('click', buzz);
-els.submitBtn.addEventListener('click', submitAnswer);
+els.hintBuzz.addEventListener('click', buzz);
+els.hintNext.addEventListener('click', goNext);
 els.resetBtn.addEventListener('click', () => ws.send(JSON.stringify({ type: 'reset' })));
-
-els.topic.addEventListener('keydown', e => { if (e.key === 'Enter') startGame(); });
+els.topic.addEventListener('keydown',  e => { if (e.key === 'Enter') startGame(); });
 els.answer.addEventListener('keydown', e => { if (e.key === 'Enter') submitAnswer(); });
 
 window.addEventListener('keydown', e => {
@@ -979,10 +866,10 @@ window.addEventListener('keydown', e => {
     if (e.key.toLowerCase() === 'n' && state === 'revealed') goNext();
 });
 
-// Initial: register self and show idle action
+// Initial state
 players.set(clientId, { score: 0 });
 renderPlayers();
-setActionIdle();
+action('idle');
 </script>
 </body>
 </html>

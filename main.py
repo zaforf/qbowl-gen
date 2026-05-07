@@ -371,8 +371,8 @@ async def stream_next_clue(client_id: str):
             game.stream_position = i + 1
             await asyncio.sleep(0.20)
 
-        # Finished reading with no correct buzz
-        await asyncio.sleep(2)
+        # Brief beat to allow last-word buzzes, then declare dead
+        await asyncio.sleep(0.6)
         if not game.buzzer_locked:
             await game.broadcast({
                 "type": "question_dead",
@@ -398,8 +398,8 @@ async def resume_streaming():
             game.stream_position = i + 1
             await asyncio.sleep(0.20)
 
-        # Reached end of clue with no correct answer
-        await asyncio.sleep(2)
+        # Brief beat for last-word buzzes after a resume
+        await asyncio.sleep(0.6)
         if not game.buzzer_locked:
             await game.broadcast({
                 "type": "question_dead",
