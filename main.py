@@ -70,10 +70,8 @@ You are the "Quizbowl Judge." Determine if a USER_GUESS matches the target ANSWE
 
 STRICT RULES:
 - The guess must name the *specific* answer, not a parent category or general description.
-  e.g. ANSWER="KMP algorithm" → "string matching algorithm" is WRONG; "Knuth-Morris-Pratt" is CORRECT.
-  e.g. ANSWER="quicksort" → "sorting algorithm" is WRONG.
-- Accept common abbreviations, alternate spellings, or unambiguously shortened names of the SAME specific thing.
-- Reject vague, overspecified, or category-level guesses even if technically related.
+- Accept case-insensitivity, common abbreviations, alternate spellings, or common punctuation variations (e.g., "Big-O" vs "Big O").
+- Only reject if the guess is a broad category (e.g., "Algorithm" for "Big-O").
 
 Output only:
 RESULT: [CORRECT/INCORRECT]
@@ -194,7 +192,6 @@ async def get():
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     await game.connect(websocket)
-    # Init score
     if client_id not in game.scores:
         game.scores[client_id] = 0
 
@@ -231,7 +228,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 if not game.buzzer_locked:
                     game.buzzer_locked = True
                     game.winner = client_id
-                    # Track when the buzz happened to calculate point value
                     game.buzz_time = time.time()
                     await game.broadcast({"type": "lock", "winner": client_id})
                     await game.stop_streaming()
@@ -245,16 +241,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                         game.current_answer, guess, game.current_clue
                     )
                     
-                    # Calculate points based on how far the clue was streamed
-                    points = 0
-                    if is_correct:
-                        # Simplification: points based on clue length streamed
-                        # In a real scenario, we'd track the current word index.
-                        # Here we'll just use a fixed set of values for this phase.
-                        points = 10
-                    else:
-                        points = -5
-                    
+                    points = 10 if is_correct else -5
                     game.scores[client_id] += points
                     
                     await game.broadcast({
@@ -270,7 +257,6 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
             
             elif message.get("type") == "reset":
                 game.reset_buzzer()
-                # Clear scores for reset
                 game.scores = {}
                 await game.broadcast({"type": "reset"})
 
@@ -310,6 +296,11 @@ async def stream_next_clue(client_id: str):
                 break
             await game.broadcast({"type": "clue_chunk", "text": word})
             await asyncio.sleep(0.20)
+        
+        if not game.buzzer_locked:
+            await asyncio.sleep(5)
+            if not game.buzzer_locked:
+                await game.broadcast({"type": "question_dead"})
             
     except asyncio.CancelledError:
         pass

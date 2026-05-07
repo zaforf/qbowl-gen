@@ -80,8 +80,10 @@
         #clue-area.locked { border-color: #5a1e1e; box-shadow: 0 0 20px rgba(90, 30, 30, 0.2); }
         #clue-area.correct { border-color: #1e4a2e; }
         #clue-area.incorrect { border-color: #4a1e1e; }
+        
         .clue-word { transition: color 0.3s ease, opacity 0.3s ease; }
-        .clue-unread { color: #333; }
+        .clue-unread { color: #333 !important; }
+
         #reveal-banner {
             background: #161616;
             border: 1px solid #222;
@@ -261,7 +263,6 @@
             stopTimer();
             clueEl.className = msg.correct ? 'correct' : 'incorrect';
             
-            // Render full clue with unread parts grayed out
             clueEl.textContent = '';
             const fullWords = msg.full_clue.split(' ');
             fullWords.forEach((word, idx) => {
