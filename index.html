@@ -4,76 +4,372 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>qbowl-gen</title>
-    <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #111; color: #eee; font-family: ui-sans-serif, system-ui, sans-serif; }
-        .buzz-btn { transition: transform 0.1s active; }
-        .buzz-btn:active { transform: scale(0.95); }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            background: #111;
+            color: #ccc;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            font-size: 13px;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ── Header ── */
+        #header {
+            border-bottom: 1px solid #1e1e1e;
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .logo { font-weight: 700; font-size: 13px; color: #fff; letter-spacing: -0.02em; }
+        #status { font-size: 11px; color: #444; font-family: monospace; }
+
+        /* ── Main ── */
+        #main {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            max-width: 720px;
+            width: 100%;
+            margin: 0 auto;
+            padding: 20px 16px 16px;
+            gap: 12px;
+            min-height: 0;
+        }
+
+        /* ── Controls ── */
+        #controls-row {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        #topic-input {
+            flex: 1;
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            color: #ddd;
+            padding: 7px 10px;
+            border-radius: 5px;
+            font-size: 13px;
+            outline: none;
+            font-family: inherit;
+        }
+        #topic-input:focus { border-color: #444; }
+        #topic-input::placeholder { color: #3a3a3a; }
+
+        /* ── Buttons ── */
+        button {
+            background: #1e1e1e;
+            border: 1px solid #2a2a2a;
+            color: #999;
+            padding: 7px 14px;
+            border-radius: 5px;
+            font-size: 12px;
+            cursor: pointer;
+            font-family: inherit;
+            white-space: nowrap;
+            transition: background 0.1s, color 0.1s;
+        }
+        button:hover { background: #252525; color: #ddd; }
+        button.primary { background: #e5e5e5; color: #111; border-color: #e5e5e5; font-weight: 600; }
+        button.primary:hover { background: #fff; }
+        button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+        /* ── Clue display ── */
+        #clue-area {
+            flex: 1;
+            background: #161616;
+            border: 1px solid #1e1e1e;
+            border-radius: 6px;
+            padding: 18px 20px;
+            font-size: 14px;
+            line-height: 1.75;
+            color: #e0e0e0;
+            overflow-y: auto;
+            min-height: 160px;
+            transition: border-color 0.2s;
+            word-break: break-word;
+        }
+        #clue-area.placeholder { color: #555; }
+        #clue-area.locked   { border-color: #5a1e1e; }
+        #clue-area.correct  { border-color: #1e4a2e; }
+        #clue-area.incorrect{ border-color: #4a1e1e; }
+
+        /* ── Reveal banner ── */
+        #reveal-banner {
+            background: #161616;
+            border: 1px solid #222;
+            border-radius: 5px;
+            padding: 10px 14px;
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        .answer-label { font-size: 11px; color: #444; flex-shrink: 0; }
+        #reveal-answer { font-size: 15px; font-weight: 600; color: #fff; }
+        #reveal-answer.correct  { color: #4ade80; }
+        #reveal-answer.incorrect{ color: #f87171; }
+        #reveal-feedback { font-size: 12px; color: #555; margin-left: auto; }
+
+        /* ── Answer input ── */
+        #answer-section {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        #answer-input {
+            flex: 1;
+            background: #1a1a1a;
+            border: 1px solid #333;
+            color: #fff;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 13px;
+            outline: none;
+            font-family: inherit;
+        }
+        #answer-input:focus { border-color: #555; }
+        #answer-input::placeholder { color: #333; }
+
+        /* ── Footer ── */
+        #footer-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .hints { display: flex; gap: 14px; color: #333; font-size: 11px; }
+        .hints span { display: flex; align-items: center; gap: 4px; }
+        kbd {
+            background: #1a1a1a;
+            border: 1px solid #2a2a2a;
+            border-bottom-width: 2px;
+            padding: 1px 5px;
+            border-radius: 3px;
+            color: #555;
+            font-size: 10px;
+            font-family: monospace;
+        }
+        #reset-btn {
+            background: none;
+            border: none;
+            color: #2a2a2a;
+            padding: 4px 0;
+            font-size: 11px;
+            cursor: pointer;
+        }
+        #reset-btn:hover { color: #555; background: none; }
+
+        .hidden { display: none !important; }
     </style>
 </head>
-<body class="h-screen flex flex-col items-center justify-center p-4">
-    <div id="game-container" class="w-full max-w-md text-center space-y-8">
-        <div id="status" class="text-xl font-medium text-gray-400">Connecting...</div>
-        
-        <div id="clue-area" class="text-2xl font-semibold min-h-[100px] leading-relaxed">
-            Waiting for game to start...
-        </div>
+<body>
 
-        <button id="buzz-btn" class="buzz-btn w-48 h-48 rounded-full bg-red-600 hover:bg-red-500 text-white text-4xl font-black shadow-2xl border-8 border-red-800 uppercase tracking-tighter">
-            BUZZ
-        </button>
+<div id="header">
+    <span class="logo">qbowl-gen</span>
+    <span id="status">connecting...</span>
+</div>
 
-        <div id="winner-display" class="text-3xl font-bold text-yellow-400 hidden"></div>
-        
-        <button id="reset-btn" class="text-sm text-gray-500 underline opacity-50 hover:opacity-100">Reset Buzzer (Debug)</button>
+<div id="main">
+    <!-- Topic + Start/Next controls -->
+    <div id="controls-row">
+        <input id="topic-input" type="text" placeholder="topic (e.g. jazz, ancient rome, linear algebra)">
+        <button id="start-btn" class="primary">Start</button>
+        <button id="next-btn" class="hidden">Next →</button>
     </div>
 
-    <script>
-        const clientId = "Player_" + Math.floor(Math.random() * 1000);
-        const statusEl = document.getElementById('status');
-        const clueEl = document.getElementById('clue-area');
-        const buzzBtn = document.getElementById('buzz-btn');
-        const winnerEl = document.getElementById('winner-display');
-        const resetBtn = document.getElementById('reset-btn');
+    <!-- Clue text -->
+    <div id="clue-area" class="placeholder">enter a topic and press start</div>
 
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${clientId}`);
+    <!-- Reveal banner (shown after answer judged) -->
+    <div id="reveal-banner" class="hidden">
+        <span class="answer-label">answer</span>
+        <span id="reveal-answer"></span>
+        <span id="reveal-feedback"></span>
+    </div>
 
-        ws.onopen = () => {
-            statusEl.innerText = `Connected as ${clientId}`;
-        };
+    <!-- Answer input (shown after buzz) -->
+    <div id="answer-section" class="hidden">
+        <input id="answer-input" type="text" placeholder="your answer...">
+        <button id="submit-btn" class="primary">Submit</button>
+    </div>
 
-        ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            
-            if (msg.type === 'lock') {
-                clueEl.innerText = "LOCKED!";
-                winnerEl.innerText = `Winner: ${msg.winner}`;
-                winnerEl.classList.remove('hidden');
-                buzzBtn.disabled = true;
-                buzzBtn.classList.add('opacity-50', 'cursor-not-allowed');
-            } else if (msg.type === 'reset') {
-                clueEl.innerText = "Waiting for game to start...";
-                winnerEl.classList.add('hidden');
-                buzzBtn.disabled = false;
-                buzzBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-            } else if (msg.type === 'error') {
-                alert(msg.message);
+    <!-- Footer -->
+    <div id="footer-row">
+        <div class="hints">
+            <span><kbd>Space</kbd> buzz</span>
+            <span><kbd>N</kbd> next</span>
+            <span><kbd>Enter</kbd> submit / start</span>
+        </div>
+        <button id="reset-btn">reset</button>
+    </div>
+</div>
+
+<script>
+    // ── State ──────────────────────────────────────────────────────
+    // idle | loading | reading | locked | revealed
+    // 'loading' = game started, waiting for first clue_chunk (status msg may fill clue area)
+    // 'reading' = clue actively streaming; clue_chunk won't wipe the area
+    let state = 'idle';
+    let isBuzzer = false;
+    const clientId = 'player_' + Math.random().toString(36).slice(2, 7);
+
+    // ── Elements ───────────────────────────────────────────────────
+    const statusEl      = document.getElementById('status');
+    const clueEl        = document.getElementById('clue-area');
+    const topicInput    = document.getElementById('topic-input');
+    const startBtn      = document.getElementById('start-btn');
+    const nextBtn       = document.getElementById('next-btn');
+    const answerSection = document.getElementById('answer-section');
+    const answerInput   = document.getElementById('answer-input');
+    const submitBtn     = document.getElementById('submit-btn');
+    const revealBanner  = document.getElementById('reveal-banner');
+    const revealAnswer  = document.getElementById('reveal-answer');
+    const revealFeedback= document.getElementById('reveal-feedback');
+    const resetBtn      = document.getElementById('reset-btn');
+
+    // ── WebSocket ──────────────────────────────────────────────────
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${proto}//${location.host}/ws/${clientId}`);
+
+    ws.onopen  = () => { statusEl.textContent = clientId; };
+    ws.onclose = () => { statusEl.textContent = 'disconnected'; };
+
+    ws.onmessage = ({ data }) => {
+        const msg = JSON.parse(data);
+
+        if (msg.type === 'status') {
+            statusEl.textContent = msg.text;
+            setClue(msg.text, 'placeholder');
+
+        } else if (msg.type === 'clue_chunk') {
+            if (state !== 'reading') {
+                state = 'reading';
+                clueEl.textContent = '';
+                clueEl.className = '';
             }
-        };
+            clueEl.textContent += (clueEl.textContent ? ' ' : '') + msg.text;
+            // auto-scroll to bottom as clue streams in
+            clueEl.scrollTop = clueEl.scrollHeight;
 
-        buzzBtn.onclick = () => {
-            ws.send(JSON.stringify({ type: 'buzz' }));
-        };
+        } else if (msg.type === 'lock') {
+            state = 'locked';
+            isBuzzer = (msg.winner === clientId);
+            clueEl.className = 'locked';
+            nextBtn.classList.add('hidden');
+            statusEl.textContent = `buzzed: ${msg.winner}`;
+            if (isBuzzer) {
+                answerSection.classList.remove('hidden');
+                answerInput.focus();
+            }
 
-        resetBtn.onclick = () => {
-            ws.send(JSON.stringify({ type: 'reset' }));
-        };
+        } else if (msg.type === 'reveal') {
+            state = 'revealed';
+            isBuzzer = false;
+            clueEl.className = msg.correct ? 'correct' : 'incorrect';
+            revealAnswer.textContent = msg.answer;
+            revealAnswer.className = msg.correct ? 'correct' : 'incorrect';
+            revealFeedback.textContent = msg.feedback;
+            revealBanner.classList.remove('hidden');
+            answerSection.classList.add('hidden');
+            nextBtn.classList.remove('hidden');
+            statusEl.textContent = msg.correct ? '✓ correct' : '✗ incorrect';
 
-        ws.onclose = () => {
-            statusEl.innerText = "Disconnected from server";
-            buzzBtn.disabled = true;
-        };
-    </script>
+        } else if (msg.type === 'reset') {
+            resetUI();
+
+        } else if (msg.type === 'error') {
+            statusEl.textContent = 'error: ' + msg.message;
+            // If queue is empty mid-game, let user start a new round
+            if (state === 'reading') {
+                state = 'idle';
+                setClue('no more questions. enter a new topic to continue.', 'placeholder');
+                startBtn.classList.remove('hidden');
+                nextBtn.classList.add('hidden');
+            }
+        }
+    };
+
+    // ── UI helpers ────────────────────────────────────────────────
+    function setClue(text, cls = '') {
+        clueEl.textContent = text;
+        clueEl.className = cls;
+    }
+
+    function resetUI() {
+        state = 'idle';
+        isBuzzer = false;
+        setClue('enter a topic and press start', 'placeholder');
+        revealBanner.classList.add('hidden');
+        answerSection.classList.add('hidden');
+        nextBtn.classList.add('hidden');
+        startBtn.classList.remove('hidden');
+        topicInput.closest('#controls-row').style.display = '';
+        statusEl.textContent = clientId;
+    }
+
+    function startGame() {
+        const topic = topicInput.value.trim() || 'General Knowledge';
+        ws.send(JSON.stringify({ type: 'start', topic }));
+        state = 'loading'; // clue_chunk will clear whatever status message landed here
+        setClue('', 'placeholder');
+        revealBanner.classList.add('hidden');
+        answerSection.classList.add('hidden');
+        nextBtn.classList.add('hidden');
+        startBtn.classList.add('hidden');
+    }
+
+    function goNext() {
+        ws.send(JSON.stringify({ type: 'next' }));
+        state = 'loading';
+        setClue('', '');
+        revealBanner.classList.add('hidden');
+        nextBtn.classList.add('hidden');
+        answerSection.classList.add('hidden');
+    }
+
+    function submitAnswer() {
+        const guess = answerInput.value.trim();
+        if (!guess) return;
+        ws.send(JSON.stringify({ type: 'submit_answer', guess }));
+        answerInput.value = '';
+    }
+
+    // ── Button handlers ───────────────────────────────────────────
+    startBtn.onclick = startGame;
+    nextBtn.onclick  = goNext;
+    submitBtn.onclick = submitAnswer;
+    resetBtn.onclick = () => ws.send(JSON.stringify({ type: 'reset' }));
+
+    topicInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') startGame();
+    });
+
+    answerInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submitAnswer();
+    });
+
+    // ── Keyboard shortcuts ────────────────────────────────────────
+    window.addEventListener('keydown', (e) => {
+        if (document.activeElement.tagName === 'INPUT') return;
+
+        if (e.code === 'Space') {
+            e.preventDefault();
+            if (state === 'reading') {
+                ws.send(JSON.stringify({ type: 'buzz' }));
+            }
+        }
+
+        if (e.key.toLowerCase() === 'n' && state === 'revealed') {
+            goNext();
+        }
+    });
+</script>
 </body>
 </html>
