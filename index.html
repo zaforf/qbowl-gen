@@ -6,47 +6,64 @@
     <title>qbowl-gen</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background-color: #111; color: #eee; font-family: ui-sans-serif, system-ui, sans-serif; }
-        .buzz-btn { transition: transform 0.1s active; }
-        .buzz-btn:active { transform: scale(0.95); }
+        body { background-color: #0a0a0a; color: #e5e5e5; font-family: 'Inter', ui-sans-serif, system-ui, sans-serif; }
+        .clue-text { transition: opacity 0.3s ease; }
         .hidden { display: none; }
+        .input-focus:focus { border-color: #fbbf24; box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.2); }
     </style>
 </head>
-<body class="h-screen flex flex-col items-center justify-center p-4">
-    <div id="game-container" class="w-full max-w-2xl text-center space-y-8">
-        <div id="status" class="text-xl font-medium text-gray-400">Connecting...</div>
+<body class="h-screen flex flex-col items-center justify-center p-6 overflow-hidden">
+    <div id="game-container" class="w-full max-w-3xl flex flex-col items-center space-y-12">
         
-        <div id="clue-area" class="text-2xl font-semibold min-h-[150px] leading-relaxed">
-            Waiting for game to start...
+        <!-- Status Bar -->
+        <div id="status" class="text-sm font-mono text-gray-500 uppercase tracking-widest">Connecting...</div>
+        
+        <!-- Clue Display -->
+        <div id="clue-area" class="text-3xl md:text-4xl font-medium text-center leading-relaxed min-h-[200px] max-h-[400px] overflow-y-auto px-4">
+            Enter a topic to begin.
         </div>
 
-        <div id="input-area" class="hidden flex flex-col items-center space-y-4">
-            <input id="answer-input" type="text" placeholder="Type your answer..." 
-                   class="bg-gray-800 text-white text-2xl p-4 rounded-lg border-2 border-gray-600 w-full max-w-md outline-none focus:border-yellow-400">
-            <button id="submit-btn" class="bg-yellow-500 hover:bg-yellow-400 text-black font-bold py-2 px-6 rounded-lg transition">
-                Submit Answer
-            </button>
+        <!-- Interaction Layer -->
+        <div id="interaction-layer" class="w-full flex flex-col items-center space-y-6">
+            
+            <!-- Answer Input (Hidden until Buzz) -->
+            <div id="input-area" class="hidden w-full max-w-md flex flex-col items-center space-y-4 animate-in fade-in zoom-in duration-300">
+                <input id="answer-input" type="text" placeholder="Your answer..." 
+                       class="bg-zinc-900 text-white text-2xl p-4 rounded-xl border border-zinc-700 w-full outline-none input-focus transition-all text-center">
+                <button id="submit-btn" class="bg-white text-black font-bold py-3 px-8 rounded-xl hover:bg-gray-200 transition-colors w-full">
+                    Submit
+                </button>
+            </div>
+
+            <!-- Start / Next Controls -->
+            <div id="controls" class="flex flex-col items-center space-y-4">
+                <div id="start-group" class="flex space-x-2">
+                    <input id="topic-input" type="text" placeholder="Topic (e.g. Quantum Physics)" 
+                           class="bg-zinc-900 p-3 rounded-lg border border-zinc-700 outline-none input-focus transition-all w-64 text-center">
+                    <button id="start-btn" class="bg-zinc-100 text-black font-semibold px-6 py-3 rounded-lg hover:bg-white transition-colors">
+                        Start
+                    </button>
+                </div>
+                <button id="next-btn" class="hidden text-zinc-500 hover:text-white transition-colors font-medium uppercase tracking-tighter text-sm">
+                    Press 'N' for Next Question
+                </button>
+            </div>
         </div>
 
-        <button id="buzz-btn" class="buzz-btn w-48 h-48 rounded-full bg-red-600 hover:bg-red-500 text-white text-4xl font-black shadow-2xl border-8 border-red-800 uppercase tracking-tighter">
-            BUZZ
-        </button>
-
-        <div id="winner-display" class="text-3xl font-bold text-yellow-400 hidden"></div>
-        
-        <div id="controls" class="flex justify-center space-x-4 pt-8">
-            <input id="topic-input" type="text" placeholder="Topic..." class="bg-gray-800 p-2 rounded border border-gray-600 outline-none">
-            <button id="start-btn" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded transition">Start Game</button>
+        <!-- Buzz Indicator (Minimal) -->
+        <div id="buzz-prompt" class="text-zinc-600 text-xs uppercase tracking-widest animate-pulse">
+            Press Space to Buzz
         </div>
+
+        <div id="winner-display" class="text-2xl font-bold text-yellow-500 hidden"></div>
         
-        <button id="reset-btn" class="block mx-auto text-xs text-gray-600 underline opacity-30 hover:opacity-100">Debug Reset</button>
+        <button id="reset-btn" class="absolute bottom-4 right-4 text-xs text-zinc-700 hover:text-zinc-500 transition-colors">Reset</button>
     </div>
 
     <script>
         const clientId = "Player_" + Math.floor(Math.random() * 1000);
         const statusEl = document.getElementById('status');
         const clueEl = document.getElementById('clue-area');
-        const buzzBtn = document.getElementById('buzz-btn');
         const winnerEl = document.getElementById('winner-display');
         const resetBtn = document.getElementById('reset-btn');
         const startBtn = document.getElementById('start-btn');
@@ -54,12 +71,15 @@
         const inputArea = document.getElementById('input-area');
         const answerInput = document.getElementById('answer-input');
         const submitBtn = document.getElementById('submit-btn');
+        const nextBtn = document.getElementById('next-btn');
+        const startGroup = document.getElementById('start-group');
+        const buzzPrompt = document.getElementById('buzz-prompt');
 
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const ws = new WebSocket(`${protocol}//${window.location.host}/ws/${clientId}`);
 
         ws.onopen = () => {
-            statusEl.innerText = `Connected as ${clientId}`;
+            statusEl.innerText = `Connected: ${clientId}`;
         };
 
         ws.onmessage = (event) => {
@@ -68,57 +88,70 @@
             if (msg.type === 'status') {
                 statusEl.innerText = msg.text;
             } else if (msg.type === 'clue_chunk') {
-                if (clueEl.innerText === "Waiting for game to start..." || clueEl.innerText === "LOCKED!" || clueEl.innerText === "Curating diverse topics...") {
+                if (clueEl.innerText === "Enter a topic to begin." || clueEl.innerText === "LOCKED!") {
                     clueEl.innerText = "";
                 }
                 clueEl.innerText += " " + msg.text;
             } else if (msg.type === 'lock') {
-                const currentClue = clueEl.innerText;
-                clueEl.innerHTML = `<div class="text-red-500 font-black text-4xl mb-4">LOCKED!</div><div class="text-xl text-gray-300">${currentClue}</div>`;
+                clueEl.innerHTML = `<div class="text-red-600 font-black text-5xl mb-6 uppercase tracking-tighter">LOCKED</div><div class="text-xl text-zinc-500">${clueEl.innerText}</div>`;
                 winnerEl.innerText = `Buzzer: ${msg.winner}`;
                 winnerEl.classList.remove('hidden');
+                buzzPrompt.classList.add('hidden');
                 
                 if (msg.winner === clientId) {
                     inputArea.classList.remove('hidden');
-                    buzzBtn.classList.add('hidden');
+                    startGroup.classList.add('hidden');
                 } else {
-                    buzzBtn.disabled = true;
-                    buzzBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    startGroup.classList.add('hidden');
                 }
             } else if (msg.type === 'reveal') {
-                winnerEl.innerHTML = `Winner: ${msg.winner}<br><span class="text-white text-xl">${msg.feedback}</span>`;
-                clueEl.innerHTML = `<div class="text-gray-400 text-lg mb-2">Correct Answer:</div><div class="text-yellow-400 text-4xl font-bold">${msg.answer}</div>`;
+                winnerEl.innerHTML = `Winner: ${msg.winner}<br><span class="text-sm font-normal text-zinc-400">${msg.feedback}</span>`;
+                clueEl.innerHTML = `<div class="text-zinc-500 text-lg mb-2">Correct Answer:</div><div class="text-white text-5xl font-bold">${msg.answer}</div>`;
                 inputArea.classList.add('hidden');
-                buzzBtn.classList.remove('hidden');
-                buzzBtn.disabled = true;
-                buzzBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                nextBtn.classList.remove('hidden');
+                buzzPrompt.classList.add('hidden');
             } else if (msg.type === 'reset') {
-                clueEl.innerText = "Waiting for game to start...";
+                clueEl.innerText = "Enter a topic to begin.";
                 winnerEl.classList.add('hidden');
                 inputArea.classList.add('hidden');
-                buzzBtn.disabled = false;
-                buzzBtn.classList.remove('opacity-50', 'cursor-not-allowed');
-                statusEl.innerText = `Connected as ${clientId}`;
+                nextBtn.classList.add('hidden');
+                startGroup.classList.remove('hidden');
+                buzzPrompt.classList.remove('hidden');
+                statusEl.innerText = `Connected: ${clientId}`;
             } else if (msg.type === 'error') {
                 alert(msg.message);
             }
         };
 
+        // Keyboard Listeners
+        window.addEventListener('keydown', (e) => {
+            if (e.code === 'Space' && !inputArea.classList.contains('hidden')) return;
+            
+            if (e.code === 'Space') {
+                e.preventDefault();
+                ws.send(JSON.stringify({ type: 'buzz' }));
+            }
+            
+            if (e.key.toLowerCase() === 'n' && !inputArea.classList.contains('hidden')) {
+                ws.send(JSON.stringify({ type: 'next' }));
+            }
+        });
+
         startBtn.onclick = () => {
             const topic = topicInput.value || "General Knowledge";
             ws.send(JSON.stringify({ type: 'start', topic: topic }));
-            clueEl.innerText = "Curating diverse topics...";
-            buzzBtn.disabled = true;
-            buzzBtn.classList.add('opacity-50', 'cursor-not-allowed');
-        };
-
-        buzzBtn.onclick = () => {
-            ws.send(JSON.stringify({ type: 'buzz' }));
+            clueEl.innerText = "Curating topics...";
+            startGroup.classList.add('hidden');
+            buzzPrompt.classList.remove('hidden');
         };
 
         submitBtn.onclick = () => {
             ws.send(JSON.stringify({ type: 'submit_answer', guess: answerInput.value }));
             answerInput.value = "";
+        };
+
+        nextBtn.onclick = () => {
+            ws.send(JSON.stringify({ type: 'next' }));
         };
 
         resetBtn.onclick = () => {

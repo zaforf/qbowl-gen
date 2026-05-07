@@ -29,7 +29,7 @@ groq_client = OpenAI(
 )
 
 # Tiered Model Selection
-MODEL_ARCHITECT = "gemma-4-31b-it"           # Google: High-entropy topic & fact generation
+MODEL_ARCHITECT = "llama-3.3-70b-versatile" # Groq: High-entropy topic & fact generation
 MODEL_WRITER = "llama-3.3-70b-versatile"     # Groq: Fast, structured clue writing
 MODEL_JUDGE = "llama-3.1-8b-instant"         # Groq: Ultra-low latency validation
 
@@ -45,7 +45,7 @@ FACTS:
 - [Niche Fact 2]
 - [Common Fact 3]
 ...
-((Repeat for 3 topics))
+(Repeat for 3 topics)
 """
 
 SYSTEM_PROMPT_WRITER = """
@@ -79,15 +79,17 @@ class Brain:
         self.groq = groq_client
 
     async def generate_topic_list(self, general_topic: str):
-        # Architect: Gemini (Gemma 4 31B)
-        prompt = f"General Topic: {general_topic}. Generate 3 distinct Quizbowl topics with fact sheets."
-        response = self.gemini.models.generate_content(
+        # Architect: Now Groq (Llama 3.3 70B)
+        response = self.groq.chat.completions.create(
             model=MODEL_ARCHITECT,
-            contents=prompt,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT_ARCHITECT)
+            messages=[
+                {"role": "system", "content": SYSTEM_PROMPT_ARCHITECT},
+                {"role": "user", "content": f"General Topic: {general_topic}. Generate 3 distinct Quizbowl topics with fact sheets."}
+            ],
+            temperature=0.7
         )
         
-        raw_text = response.text
+        raw_text = response.choices[0].message.content
         topics = []
         parts = raw_text.split("TOPIC:")
         for part in parts[1:]:
@@ -144,6 +146,7 @@ class GameState:
         self.current_answer = None
         self.current_clue = None
         self.streaming_task: Optional[asyncio.Task] = None
+        self.bg_generator_task: Optional[asyncio.Task] = None
         
         # Topic Queue Infrastructure
         self.topic_queue: List[Dict] = []
@@ -194,13 +197,29 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 await game.stop_streaming()
                 game.reset_buzzer()
                 
-                # Reset queues for new topic
                 game.topic_queue = []
                 while not game.pregenerated_clues.empty():
                     game.pregenerated_clues.get_nowait()
                 
-                game.streaming_task = asyncio.create_task(handle_game_loop(client_id, topic))
+                # 1. Architect generates the high-entropy list
+                await game.broadcast({"type": "status", "text": "Curating diverse topics..."})
+                topics = await brain.generate_topic_list(topic)
+                game.topic_queue = topics
+                
+                # Start background worker to fill the clue queue
+                if game.bg_generator_task:
+                    game.bg_generator_task.cancel()
+                game.bg_generator_task = asyncio.create_task(background_generator())
+                
+                # Start the first clue immediately
+                game.streaming_task = asyncio.create_task(stream_next_clue(client_id))
             
+            elif message.get("type") == "next":
+                # Trigger next question from the queue
+                await game.stop_streaming()
+                game.reset_buzzer()
+                game.streaming_task = asyncio.create_task(stream_next_clue(client_id))
+
             elif message.get("type") == "buzz":
                 if not game.buzzer_locked:
                     game.buzzer_locked = True
@@ -234,40 +253,34 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 
 async def background_generator():
     """Fills the pregenerated_clues queue using the topic_queue."""
-    while True:
-        if game.topic_queue:
-            topic_data = game.topic_queue.pop(0)
-            answer, clue = await brain.generate_clue_from_facts(topic_data)
-            await game.pregenerated_clues.put((answer, clue))
-        else:
-            await asyncio.sleep(1)
-
-async def handle_game_loop(client_id: str, topic: str):
     try:
-        # 1. Architect generates the high-entropy list
-        await game.broadcast({"type": "status", "text": "Curating diverse topics..."})
-        topics = await brain.generate_topic_list(topic)
-        game.topic_queue = topics
+        while True:
+            if game.topic_queue:
+                topic_data = game.topic_queue.pop(0)
+                answer, clue = await brain.generate_clue_from_facts(topic_data)
+                await game.pregenerated_clues.put((answer, clue))
+            else:
+                await asyncio.sleep(1)
+    except asyncio.CancelledError:
+        pass
+
+async def stream_next_clue(client_id: str):
+    try:
+        # Get the next clue from the queue
+        attempts = 0
+        while game.pregenerated_clues.empty() and attempts < 50:
+            await asyncio.sleep(0.1)
+            attempts += 1
+            
+        if game.pregenerated_clues.empty():
+            await game.broadcast({"type": "error", "message": "No more questions in the queue."})
+            return
+
+        answer, clue = await game.pregenerated_clues.get()
+        game.current_answer = answer
+        game.current_clue = clue
         
-        # Start background worker to fill the clue queue
-        bg_task = asyncio.create_task(background_generator())
-        
-        # 2. Get the first clue immediately
-        # while game.pregenerated_clues.empty():
-        #     await asyncio.sleep(0.1)
-        #
-        # answer, clue = await game.pregenerated_clues.get()
-        
-        # Direct call for the first clue to avoid initial loop delay
-        first_topic_data = game.topic_queue.pop(0) if game.topic_queue else None
-        if first_topic_data:
-            answer, clue = await brain.generate_clue_from_facts(first_topic_data)
-            game.current_answer = answer
-            game.current_clue = clue
-        else:
-            raise Exception("Architect failed to generate topics.")
-        
-        # 3. Stream the clue
+        # Stream the clue
         sentences = clue.split(". ")
         for sentence in sentences:
             if game.buzzer_locked:
@@ -278,14 +291,12 @@ async def handle_game_loop(client_id: str, topic: str):
             
             await game.broadcast({"type": "clue_chunk", "text": s})
             await asyncio.sleep(2.5)
-        
-        bg_task.cancel()
             
     except asyncio.CancelledError:
         pass
     except Exception as e:
-        print(f"Error in game loop: {e}")
-        await game.broadcast({"type": "error", "message": "AI failed to generate content."})
+        print(f"Error streaming clue: {e}")
+        await game.broadcast({"type": "error", "message": "AI failed to stream clue."})
 
 if __name__ == "__main__":
     import uvicorn
