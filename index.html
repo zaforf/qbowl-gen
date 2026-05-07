@@ -9,27 +9,32 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg:        #fbfaf7;   /* warm paper */
+            --bg:        #fbfaf7;
             --panel:     #ffffff;
-            --ink:       #18181b;   /* primary text */
-            --ink-2:     #52525b;   /* secondary */
-            --ink-3:     #a1a1aa;   /* muted */
+            --ink:       #18181b;
+            --ink-2:     #52525b;
+            --ink-3:     #a1a1aa;
             --rule:      #e7e5e4;
             --rule-2:    #f4f4f0;
-            --accent:    #1f2937;   /* near-black for primary buttons */
+            --accent:    #1f2937;
             --accent-fg: #ffffff;
             --good:      #15803d;
             --bad:       #b91c1c;
             --warn:      #b45309;
+            --good-bg:   #f0fdf4;
+            --good-bd:   #bbf7d0;
+            --bad-bg:    #fef2f2;
+            --bad-bd:    #fecaca;
+            --warn-bg:   #fffbeb;
+            --warn-bd:   #fde68a;
 
-            --font-ui:    'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-            --font-read:  'Source Serif 4', 'Charter', 'Georgia', serif;
-            --font-mono:  'JetBrains Mono', ui-monospace, Menlo, monospace;
+            --font-ui:   'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+            --font-read: 'Source Serif 4', 'Charter', 'Georgia', serif;
+            --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
         }
 
         *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-        /* Scrollbars match paper theme */
         * { scrollbar-width: thin; scrollbar-color: #d4d4d4 transparent; }
         ::-webkit-scrollbar { width: 6px; height: 6px; }
         ::-webkit-scrollbar-track { background: transparent; }
@@ -41,14 +46,12 @@
             color: var(--ink);
             font-family: var(--font-ui);
             font-size: 14px;
-            font-feature-settings: "ss01", "cv11";
             line-height: 1.5;
             height: 100vh;
             display: flex;
             flex-direction: column;
             overflow: hidden;
             -webkit-font-smoothing: antialiased;
-            -moz-osx-font-smoothing: grayscale;
         }
 
         /* ── Header ── */
@@ -56,16 +59,11 @@
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 14px 28px;
+            padding: 12px 28px;
             border-bottom: 1px solid var(--rule);
             flex-shrink: 0;
-            background: var(--bg);
         }
-        .brand {
-            font-weight: 700;
-            font-size: 15px;
-            letter-spacing: -0.02em;
-        }
+        .brand { font-weight: 700; font-size: 15px; letter-spacing: -0.02em; }
         .brand .dot { color: var(--bad); }
         .header-right {
             display: flex;
@@ -74,16 +72,8 @@
             font-size: 13px;
             color: var(--ink-2);
         }
-        .header-right .me {
-            font-family: var(--font-mono);
-            font-size: 12px;
-            color: var(--ink);
-        }
-        .header-right .online {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-        }
+        .me { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
+        .online { display: inline-flex; align-items: center; gap: 6px; }
         .online-dot {
             width: 7px; height: 7px;
             background: var(--good);
@@ -94,8 +84,7 @@
         .layout {
             flex: 1;
             display: grid;
-            grid-template-columns: minmax(0, 1fr) 320px;
-            gap: 0;
+            grid-template-columns: minmax(0, 1fr) 300px;
             overflow: hidden;
             max-width: 1280px;
             width: 100%;
@@ -107,24 +96,167 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            padding: 28px 36px;
-            gap: 22px;
             border-right: 1px solid var(--rule);
         }
 
-        /* ── Topic / controls ── */
-        .controls {
+        /* ── Topic bar (top, fixed) ── */
+        .topic-bar {
+            flex-shrink: 0;
+            padding: 16px 28px;
             display: flex;
-            gap: 10px;
+            gap: 8px;
             align-items: center;
+            border-bottom: 1px solid var(--rule);
         }
-        .controls label {
-            font-size: 12px;
+        .topic-bar .label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 600;
             color: var(--ink-3);
+        }
+
+        /* ── Question stream (scrollable middle) ── */
+        .stream {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px 28px 8px;
+        }
+        .stream-empty {
+            color: var(--ink-3);
+            font-size: 14px;
+            text-align: center;
+            padding: 60px 20px;
+            font-family: var(--font-read);
+            font-size: 16px;
+            font-style: normal;
+        }
+
+        /* ── Question card ── */
+        .qcard {
+            background: var(--panel);
+            border: 1px solid var(--rule);
+            border-radius: 10px;
+            padding: 16px 22px 18px;
+            margin-bottom: 14px;
+            transition: border-color 200ms, background 200ms;
+        }
+        .qcard[data-state="reading"] {
+            border-color: #d4d4d8;
+            box-shadow: 0 0 0 3px #f4f4f5;
+        }
+        .qcard[data-state="locked"] {
+            border-color: var(--bad-bd);
+            background: #fef9f9;
+        }
+        .qcard[data-state="revealed"] {
+            background: var(--good-bg);
+            border-color: var(--good-bd);
+        }
+        .qcard[data-state="dead"] {
+            background: var(--warn-bg);
+            border-color: var(--warn-bd);
+        }
+
+        .qcard-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 11px;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             font-weight: 600;
+            color: var(--ink-3);
+            margin-bottom: 10px;
         }
+        .qnum { color: var(--ink-2); font-family: var(--font-mono); font-size: 11px; }
+        .qstate.reading  { color: var(--ink-2); }
+        .qstate.locked   { color: var(--bad); }
+        .qstate.revealed { color: var(--good); }
+        .qstate.dead     { color: var(--warn); }
+
+        .qbody {
+            font-family: var(--font-read);
+            font-size: 17px;
+            line-height: 1.7;
+            color: var(--ink);
+        }
+        .word-read   { color: var(--ink); }
+        .word-unread { color: #d4d4d8; }
+
+        .qresult {
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px dashed var(--rule);
+            display: flex;
+            align-items: baseline;
+            gap: 10px;
+            flex-wrap: wrap;
+            font-size: 13px;
+        }
+        .qresult .answer-label {
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: var(--ink-3);
+            font-weight: 700;
+        }
+        .qresult .answer {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--ink);
+        }
+        .qresult .winner-meta {
+            margin-left: auto;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--ink-2);
+        }
+        .qresult .winner-meta .who { color: var(--ink); }
+
+        /* ── Action zone (fixed at bottom of main) ── */
+        .action-zone {
+            flex-shrink: 0;
+            padding: 14px 28px 16px;
+            border-top: 1px solid var(--rule);
+            background: var(--bg);
+        }
+        .action-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            min-height: 42px;
+        }
+        .action-row .input { flex: 1; font-size: 15px; }
+        .action-hint {
+            font-size: 12px;
+            color: var(--ink-3);
+            font-family: var(--font-mono);
+        }
+
+        .timer-track {
+            margin-top: 10px;
+            height: 3px;
+            background: var(--rule-2);
+            border-radius: 2px;
+            overflow: hidden;
+        }
+        .timer-fill {
+            height: 100%;
+            width: 0%;
+            background: var(--warn);
+            transition: width 100ms linear;
+        }
+
+        .waiting {
+            font-size: 14px;
+            color: var(--ink-2);
+            padding: 8px 0;
+            font-family: var(--font-ui);
+        }
+        .waiting .who { color: var(--ink); font-weight: 600; font-family: var(--font-mono); }
+
+        /* ── Inputs ── */
         .input {
             background: var(--panel);
             border: 1px solid var(--rule);
@@ -138,7 +270,6 @@
         }
         .input:focus { border-color: var(--ink-2); }
         .input::placeholder { color: var(--ink-3); }
-        .input.flex { flex: 1; }
 
         /* ── Buttons ── */
         .btn {
@@ -160,100 +291,24 @@
             color: var(--accent-fg);
             border-color: var(--accent);
         }
-        .btn-primary:hover { background: #000; border-color: #000; }
+        .btn-primary:hover { background: #000; }
         .btn-ghost {
             border-color: transparent;
             color: var(--ink-2);
             background: transparent;
         }
         .btn-ghost:hover { color: var(--ink); background: var(--rule-2); }
-
-        /* ── Question card ── */
-        .question {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: var(--panel);
-            border: 1px solid var(--rule);
-            border-radius: 10px;
-            overflow: hidden;
-            min-height: 0;
-        }
-        .q-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 14px 24px;
-            border-bottom: 1px solid var(--rule-2);
-            font-size: 12px;
-            color: var(--ink-3);
-            font-weight: 500;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
-            flex-shrink: 0;
-        }
-        .q-meta { font-family: var(--font-mono); font-size: 11px; }
-        .q-state-pill {
-            font-size: 11px;
-            padding: 3px 9px;
-            border-radius: 999px;
-            background: var(--rule-2);
-            color: var(--ink-2);
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            font-weight: 600;
-        }
-        .q-state-pill.reading  { background: #ecfccb; color: #3f6212; }
-        .q-state-pill.locked   { background: #fee2e2; color: #991b1b; }
-        .q-state-pill.revealed { background: #dcfce7; color: #166534; }
-        .q-state-pill.dead     { background: #fef3c7; color: #92400e; }
-
-        .q-body {
-            flex: 1;
-            overflow-y: auto;
-            padding: 28px 28px 24px;
-            font-family: var(--font-read);
-            font-size: 18px;
-            line-height: 1.7;
-            color: var(--ink);
-            min-height: 0;
-        }
-        .q-body.placeholder {
-            color: var(--ink-3);
-            font-size: 15px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-        }
-        .word-read   { color: var(--ink); }
-        .word-unread { color: #d4d4d4; }
-
-        .q-footer {
-            border-top: 1px solid var(--rule-2);
-            padding: 14px 16px;
-            background: #fcfbf8;
-            flex-shrink: 0;
-        }
-
-        /* ── Action zone (lives inside .q-footer) ── */
-        .action {
-            display: flex;
-            gap: 10px;
-            align-items: center;
-        }
-        .action .input { flex: 1; font-size: 15px; }
         .buzz-btn {
             flex: 1;
             padding: 11px;
-            font-size: 14px;
-            font-weight: 600;
             background: var(--accent);
             color: var(--accent-fg);
             border: 1px solid var(--accent);
             border-radius: 6px;
-            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
             font-family: inherit;
+            cursor: pointer;
             letter-spacing: 0.02em;
             transition: background 80ms;
         }
@@ -262,72 +317,7 @@
             margin-left: 8px;
             font-weight: 400;
             font-size: 12px;
-            opacity: 0.6;
-        }
-        .waiting {
-            font-size: 14px;
-            color: var(--ink-2);
-            padding: 10px 0;
-        }
-        .waiting strong { color: var(--ink); font-weight: 600; }
-        .private-feedback {
-            margin-top: 10px;
-            padding: 10px 14px;
-            background: #fef2f2;
-            border: 1px solid #fecaca;
-            border-radius: 6px;
-            color: #991b1b;
-            font-size: 13px;
-            line-height: 1.5;
-        }
-        .private-feedback .pf-label {
-            font-size: 10px;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            font-weight: 700;
-            color: #b91c1c;
-            margin-bottom: 3px;
-            display: block;
-        }
-        .reveal-banner {
-            margin-top: 10px;
-            padding: 12px 16px;
-            border-radius: 6px;
-            font-size: 14px;
-        }
-        .reveal-banner.correct {
-            background: #f0fdf4;
-            border: 1px solid #bbf7d0;
-            color: #14532d;
-        }
-        .reveal-banner.dead {
-            background: #fffbeb;
-            border: 1px solid #fde68a;
-            color: #78350f;
-        }
-        .reveal-banner .rb-label {
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            font-weight: 700;
-            color: var(--ink-3);
-            margin-right: 8px;
-        }
-        .reveal-banner strong { font-weight: 600; }
-
-        /* ── Timer bar ── */
-        .timer-track {
-            height: 3px;
-            background: var(--rule-2);
-            border-radius: 2px;
-            overflow: hidden;
-            margin-top: 10px;
-        }
-        .timer-fill {
-            height: 100%;
-            background: var(--warn);
-            width: 0%;
-            transition: width 100ms linear;
+            opacity: 0.65;
         }
 
         /* ── Sidebar ── */
@@ -335,12 +325,18 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            background: var(--bg);
         }
         .panel {
-            padding: 22px 24px;
+            padding: 18px 22px;
+            border-bottom: 1px solid var(--rule);
         }
-        .panel + .panel { border-top: 1px solid var(--rule); }
+        .panel:last-child {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-bottom: none;
+        }
         .panel-title {
             display: flex;
             align-items: center;
@@ -350,25 +346,20 @@
             text-transform: uppercase;
             letter-spacing: 0.1em;
             font-weight: 700;
-            margin-bottom: 14px;
+            margin-bottom: 12px;
         }
         .panel-title .count {
             font-family: var(--font-mono);
             font-size: 11px;
-            color: var(--ink-3);
         }
 
         /* Players */
-        .players {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
+        .players-list { display: flex; flex-direction: column; gap: 6px; }
         .player-row {
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 4px 0;
+            padding: 3px 0;
             font-size: 13px;
         }
         .player-name {
@@ -401,68 +392,40 @@
         .player-score.neg { color: var(--bad); }
 
         /* Activity */
-        .activity {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow: hidden;
-            padding-bottom: 0;
-        }
         .activity-list {
             flex: 1;
             overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 0;
-            margin: 0 -24px;
-            padding: 0 24px 22px;
+            margin: 0 -22px;
+            padding: 0 22px;
         }
         .ev {
-            padding: 10px 0;
+            padding: 8px 0;
             border-bottom: 1px solid var(--rule-2);
-            font-size: 13px;
+            font-size: 12px;
             line-height: 1.45;
             color: var(--ink-2);
         }
         .ev:last-child { border-bottom: none; }
         .ev-tag {
-            font-size: 10px;
+            font-size: 9px;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.08em;
+            letter-spacing: 0.1em;
             color: var(--ink-3);
-            display: block;
-            margin-bottom: 3px;
+            display: inline-block;
+            margin-right: 8px;
+            min-width: 38px;
         }
         .ev .who { font-family: var(--font-mono); font-size: 12px; color: var(--ink); }
-        .ev .said {
-            display: inline;
-            color: var(--ink);
-        }
         .ev.correct .ev-tag { color: var(--good); }
         .ev.wrong   .ev-tag { color: var(--warn); }
         .ev.dead    .ev-tag { color: var(--warn); }
         .ev.lock    .ev-tag { color: var(--bad); }
         .ev.join    .ev-tag { color: var(--ink-3); }
-        .ev .answer {
-            color: var(--ink);
-            font-weight: 600;
-        }
-        .ev.expandable { cursor: pointer; }
-        .ev.expandable:hover { background: var(--rule-2); margin: 0 -24px; padding: 10px 24px; }
-        .ev-expanded {
-            margin-top: 8px;
-            padding: 10px 12px;
-            background: var(--bg);
-            border-radius: 4px;
-            color: var(--ink-2);
-            font-family: var(--font-read);
-            font-size: 13px;
-            line-height: 1.6;
-        }
 
         /* ── Footer hints ── */
         .hints {
+            grid-column: 1 / -1;
             padding: 8px 28px;
             border-top: 1px solid var(--rule);
             display: flex;
@@ -470,9 +433,7 @@
             justify-content: space-between;
             font-size: 11px;
             color: var(--ink-3);
-            background: var(--bg);
             flex-shrink: 0;
-            grid-column: 1 / -1;
         }
         .hints .keys { display: flex; gap: 14px; }
         .hints .keys span { display: inline-flex; gap: 4px; align-items: center; }
@@ -494,7 +455,6 @@
 
         .hidden { display: none !important; }
 
-        /* Slim layout: hide sidebar on narrow screens */
         @media (max-width: 900px) {
             .layout { grid-template-columns: 1fr; }
             aside { display: none; }
@@ -514,74 +474,54 @@
 </header>
 
 <div class="layout">
-
     <main>
-        <div class="controls">
-            <input id="topic-input" class="input flex" type="text"
-                   placeholder="Topic — e.g. ancient rome, jazz, linear algebra">
+        <div class="topic-bar">
+            <span class="label">Topic</span>
+            <input id="topic-input" class="input" type="text" style="flex:1"
+                   placeholder="ancient rome, jazz, linear algebra…">
             <button id="start-btn" class="btn btn-primary">Start round</button>
-            <button id="next-btn" class="btn btn-primary hidden">Next →</button>
         </div>
 
-        <section class="question">
-            <div class="q-header">
-                <span class="q-meta" id="q-meta">— · —</span>
-                <span class="q-state-pill" id="q-state">idle</span>
-            </div>
-
-            <div class="q-body placeholder" id="q-body">
+        <div class="stream" id="stream">
+            <div class="stream-empty" id="stream-empty">
                 Pick a topic and start a round to begin.
             </div>
+        </div>
 
-            <div class="q-footer">
-                <div class="action">
-                    <button id="buzz-btn" class="buzz-btn hidden">
-                        Buzz<span class="kbd-hint">Space</span>
-                    </button>
-                    <span id="waiting" class="waiting hidden"></span>
-                    <input id="answer-input" type="text" class="input hidden"
-                           placeholder="Your answer…" autocomplete="off">
-                    <button id="submit-btn" class="btn btn-primary hidden">Submit</button>
-                </div>
-
-                <div id="timer-track" class="timer-track hidden">
-                    <div id="timer-fill" class="timer-fill"></div>
-                </div>
-
-                <div id="private-feedback" class="private-feedback hidden">
-                    <span class="pf-label">Judge</span>
-                    <span id="pf-text"></span>
-                </div>
-
-                <div id="reveal-banner" class="reveal-banner hidden">
-                    <span class="rb-label">Answer</span>
-                    <strong id="rb-answer"></strong>
-                </div>
+        <div class="action-zone">
+            <div class="action-row" id="action-row">
+                <span class="action-hint" id="action-idle">Press <kbd>Enter</kbd> after typing a topic to begin.</span>
+                <button id="buzz-btn" class="buzz-btn hidden">
+                    Buzz<span class="kbd-hint">Space</span>
+                </button>
+                <span id="waiting" class="waiting hidden"></span>
+                <input id="answer-input" type="text" class="input hidden"
+                       placeholder="Your answer…" autocomplete="off">
+                <button id="submit-btn" class="btn btn-primary hidden">Submit</button>
+                <button id="next-btn" class="btn btn-primary hidden">Next question →</button>
             </div>
-        </section>
+            <div id="timer-track" class="timer-track hidden">
+                <div id="timer-fill" class="timer-fill"></div>
+            </div>
+        </div>
     </main>
 
     <aside>
         <div class="panel">
             <div class="panel-title">Players <span class="count" id="players-count">0</span></div>
-            <div class="players" id="players-list">
-                <div class="ev-tag" style="color:var(--ink-3); font-weight:500; text-transform:none; letter-spacing:0; font-size:12px;">
-                    Connecting…
-                </div>
-            </div>
+            <div class="players-list" id="players-list"></div>
         </div>
-
-        <div class="panel activity">
+        <div class="panel">
             <div class="panel-title">Activity</div>
-            <div class="activity-list" id="activity-list"></div>
+            <div class="activity-list" id="activity"></div>
         </div>
     </aside>
 
     <div class="hints">
         <div class="keys">
             <span><kbd>Space</kbd> buzz</span>
-            <span><kbd>N</kbd> next question</span>
-            <span><kbd>Enter</kbd> submit · start</span>
+            <span><kbd>N</kbd> next</span>
+            <span><kbd>Enter</kbd> submit / start</span>
         </div>
         <span class="status" id="status">connecting…</span>
     </div>
@@ -590,14 +530,15 @@
 <script>
 "use strict";
 
-// ── State machine ────────────────────────────────────────────────
+// ── State ────────────────────────────────────────────────────────
 // idle | loading | reading | locked | revealed
 let state = 'idle';
 let isBuzzer = false;
-let wordsRead = 0;
 let timerInterval = null;
-let questionNumber = 0;
-const players = new Map(); // id -> { score }
+let currentCard = null;     // active question card element
+let currentBody = null;     // its .qbody element
+let currentWordsRead = 0;   // words received in current question
+const players = new Map();  // id -> { score }
 
 const clientId = (() => {
     let id = localStorage.getItem('qb_cid');
@@ -608,14 +549,10 @@ const clientId = (() => {
     return id;
 })();
 
-// ── Element refs ─────────────────────────────────────────────────
 const $ = id => document.getElementById(id);
-const meId = $('me-id'); meId.textContent = clientId;
-
 const els = {
-    qBody: $('q-body'),
-    qMeta: $('q-meta'),
-    qState: $('q-state'),
+    me: $('me-id'),
+    onlineCount: $('online-count'),
     topic: $('topic-input'),
     startBtn: $('start-btn'),
     nextBtn: $('next-btn'),
@@ -623,25 +560,25 @@ const els = {
     waiting: $('waiting'),
     answer: $('answer-input'),
     submitBtn: $('submit-btn'),
+    actionIdle: $('action-idle'),
     timerTrack: $('timer-track'),
     timerFill: $('timer-fill'),
-    privateFb: $('private-feedback'),
-    pfText: $('pf-text'),
-    revealBanner: $('reveal-banner'),
-    rbAnswer: $('rb-answer'),
-    playersList: $('players-list'),
+    stream: $('stream'),
+    streamEmpty: $('stream-empty'),
     playersCount: $('players-count'),
-    onlineCount: $('online-count'),
-    activity: $('activity-list'),
+    playersList: $('players-list'),
+    activity: $('activity'),
     resetBtn: $('reset-btn'),
     status: $('status'),
 };
+els.me.textContent = clientId;
 
 // ── WebSocket ────────────────────────────────────────────────────
 const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
 const ws = new WebSocket(`${proto}//${location.host}/ws/${clientId}`);
-ws.onopen  = () => { setStatus('connected'); };
-ws.onclose = () => { setStatus('disconnected'); };
+
+ws.onopen  = () => setStatus('connected');
+ws.onclose = () => setStatus('disconnected');
 
 ws.onmessage = ({ data }) => {
     const msg = JSON.parse(data);
@@ -650,11 +587,9 @@ ws.onmessage = ({ data }) => {
 
     case 'status':
         setStatus(msg.text);
-        if (state === 'loading') setPlaceholder(msg.text);
         break;
 
     case 'state_sync':
-        // Populate online player list first, then their scores.
         if (msg.players) {
             msg.players.forEach(id => {
                 if (!players.has(id)) players.set(id, { score: 0 });
@@ -662,63 +597,59 @@ ws.onmessage = ({ data }) => {
         }
         if (msg.scores) ingestScores(msg.scores);
         renderPlayers();
-        // Active game catch-up
-        if (!msg.partial_clue) break;
-        wordsRead = msg.words_read || 0;
-        state = msg.locked ? 'locked' : 'reading';
-        renderClue(msg.partial_clue.split(' '), 'word-read');
-        if (msg.locked) {
-            setActionLocked(msg.winner);
-            setQuestionState('locked');
-        } else {
-            setActionReading();
-            setQuestionState('reading');
+        // Late-join catch-up with active question
+        if (msg.partial_clue) {
+            state = msg.locked ? 'locked' : 'reading';
+            currentCard = createQuestionCard(msg.question_number || '?');
+            currentBody = currentCard.querySelector('.qbody');
+            currentWordsRead = msg.words_read || 0;
+            renderClueWords(msg.partial_clue.split(' '), 'word-read');
+            if (msg.locked) {
+                setCardState(currentCard, 'locked', `${msg.winner} answering`);
+                setActionLocked(msg.winner);
+            } else {
+                setCardState(currentCard, 'reading', 'reading');
+                setActionReading();
+            }
+            scrollStreamToBottom();
         }
         break;
 
+    case 'question_start':
+        // Server announces a new question is starting; create card now
+        startNewQuestion(msg.question_number);
+        break;
+
     case 'clue_chunk':
-        if (state === 'idle') break;       // stale post-reset
+        if (state === 'idle') break;
+        if (!currentCard) startNewQuestion(null);
         if (state !== 'reading') {
             state = 'reading';
-            questionNumber += (questionNumber === 0 ? 1 : 0);
-            els.qBody.textContent = '';
-            els.qBody.classList.remove('placeholder');
-            wordsRead = 0;
+            setCardState(currentCard, 'reading', 'reading');
             setActionReading();
-            setQuestionState('reading');
-            hideRevealBanner();
-            hidePrivateFeedback();
-            els.qMeta.textContent = `Question ${questionNumber || 1}`;
         }
         appendWord(msg.text);
-        wordsRead++;
+        currentWordsRead++;
         break;
 
     case 'lock':
         state = 'locked';
         isBuzzer = (msg.winner === clientId);
-        setQuestionState('locked');
+        if (currentCard) setCardState(currentCard, 'locked', `${esc(msg.winner)} answering`);
         setActionLocked(msg.winner);
-        addEvent('lock', 'BUZZ', `<span class="who">${esc(msg.winner)}</span> buzzed`);
+        addEvent('lock', 'BUZZ', `<span class="who">${esc(msg.winner)}</span>`);
         setStatus(`${msg.winner} buzzed`);
         break;
 
     case 'wrong_buzz':
-        // Public version has no feedback (server hides it from non-guessers).
+        // No feedback at all — just announce the fact.
         state = 'reading';
-        const wasMe = (msg.guesser === clientId);
         isBuzzer = false;
         stopTimer();
+        if (currentCard) setCardState(currentCard, 'reading', 'reading');
         setActionReading();
-        setQuestionState('reading');
-        if (wasMe && msg.feedback) {
-            showPrivateFeedback(msg.feedback);
-        }
-        const guessHTML = msg.guess
-            ? `said <span class="answer">"${esc(msg.guess)}"</span>`
-            : `didn't answer`;
         addEvent('wrong', 'WRONG',
-            `<span class="who">${esc(msg.guesser)}</span> ${guessHTML} — reading continues`);
+            `<span class="who">${esc(msg.guesser)}</span> said “${esc(msg.guess) || '—'}”`);
         if (msg.scores) ingestScores(msg.scores);
         setStatus('reading…');
         break;
@@ -727,27 +658,29 @@ ws.onmessage = ({ data }) => {
         state = 'revealed';
         isBuzzer = false;
         stopTimer();
+        if (currentCard) {
+            setCardState(currentCard, 'revealed', '✓ correct');
+            renderReadUnread(msg.full_clue);
+            attachResult(currentCard, 'revealed', msg.answer,
+                `<span class="who">${esc(msg.winner)}</span> said “${esc(msg.guess)}” ✓`);
+        }
         setActionRevealed();
-        setQuestionState('revealed');
-        renderReadUnread(msg.full_clue);
-        showRevealBanner('correct', msg.answer);
         addEvent('correct', 'CORRECT',
-            `<span class="who">${esc(msg.winner)}</span> said <span class="answer">"${esc(msg.guess)}"</span> · <strong>${esc(msg.answer)}</strong>`,
-            msg.full_clue);
-        setStatus(`✓ ${msg.answer}`);
+            `<span class="who">${esc(msg.winner)}</span> · <strong>${esc(msg.answer)}</strong>`);
         if (msg.scores) ingestScores(msg.scores);
+        setStatus(`✓ ${msg.answer}`);
         break;
 
     case 'question_dead':
         state = 'revealed';
         stopTimer();
+        if (currentCard) {
+            setCardState(currentCard, 'dead', '— dead');
+            if (msg.full_clue) renderReadUnread(msg.full_clue);
+            attachResult(currentCard, 'dead', msg.answer, 'no correct buzz');
+        }
         setActionRevealed();
-        setQuestionState('dead');
-        if (msg.full_clue) renderReadUnread(msg.full_clue);
-        showRevealBanner('dead', msg.answer);
-        addEvent('dead', 'DEAD',
-            `No correct buzz · <strong>${esc(msg.answer)}</strong>`,
-            msg.full_clue);
+        addEvent('dead', 'DEAD', `<strong>${esc(msg.answer)}</strong>`);
         setStatus(`— ${msg.answer}`);
         break;
 
@@ -759,149 +692,162 @@ ws.onmessage = ({ data }) => {
         if (!players.has(msg.player)) players.set(msg.player, { score: 0 });
         renderPlayers();
         els.onlineCount.textContent = msg.count;
-        addEvent('join', 'JOIN', `<span class="who">${esc(msg.player)}</span> connected`);
+        if (msg.player !== clientId) {
+            addEvent('join', 'JOIN', `<span class="who">${esc(msg.player)}</span>`);
+        }
         break;
 
     case 'player_left':
         players.delete(msg.player);
         renderPlayers();
         els.onlineCount.textContent = msg.count;
-        addEvent('join', 'LEAVE', `<span class="who">${esc(msg.player)}</span> left`);
+        addEvent('join', 'LEAVE', `<span class="who">${esc(msg.player)}</span>`);
         break;
 
     case 'error':
         setStatus('error: ' + msg.message);
         if (state === 'reading' || state === 'loading') {
             state = 'idle';
-            setPlaceholder('No more questions. Pick a new topic.');
-            setQuestionState('idle');
-            els.startBtn.classList.remove('hidden');
-            els.nextBtn.classList.add('hidden');
-            setActionIdle();
+            setActionIdle('Round complete. Pick a new topic to start another.');
         }
         break;
     }
 };
 
-// ── Question text rendering ──────────────────────────────────────
-function appendWord(word) {
-    const s = document.createElement('span');
-    s.className = 'word-read';
-    s.textContent = (els.qBody.children.length ? ' ' : '') + word;
-    els.qBody.appendChild(s);
-    els.qBody.scrollTop = els.qBody.scrollHeight;
+// ── Question cards ───────────────────────────────────────────────
+function startNewQuestion(qnum) {
+    state = 'reading';
+    currentCard = createQuestionCard(qnum);
+    currentBody = currentCard.querySelector('.qbody');
+    currentWordsRead = 0;
+    setCardState(currentCard, 'reading', 'reading');
+    setActionReading();
+    scrollStreamToBottom();
 }
 
-function renderClue(words, cls) {
-    els.qBody.classList.remove('placeholder');
-    els.qBody.textContent = '';
+function createQuestionCard(qnum) {
+    els.streamEmpty.classList.add('hidden');
+    const card = document.createElement('div');
+    card.className = 'qcard';
+    card.dataset.state = 'reading';
+    card.innerHTML = `
+        <div class="qcard-meta">
+            <span class="qnum">Question ${qnum ?? '—'}</span>
+            <span class="qstate reading">reading</span>
+        </div>
+        <div class="qbody"></div>
+    `;
+    els.stream.appendChild(card);
+    return card;
+}
+
+function setCardState(card, stateName, label) {
+    card.dataset.state = stateName;
+    const stateEl = card.querySelector('.qstate');
+    stateEl.className = 'qstate ' + stateName;
+    stateEl.textContent = label;
+}
+
+function attachResult(card, kind, answer, metaHTML) {
+    let res = card.querySelector('.qresult');
+    if (!res) {
+        res = document.createElement('div');
+        res.className = 'qresult';
+        card.appendChild(res);
+    }
+    res.innerHTML = `
+        <span class="answer-label">Answer</span>
+        <span class="answer">${esc(answer)}</span>
+        <span class="winner-meta">${metaHTML}</span>
+    `;
+}
+
+function appendWord(word) {
+    if (!currentBody) return;
+    const s = document.createElement('span');
+    s.className = 'word-read';
+    s.textContent = (currentBody.children.length ? ' ' : '') + word;
+    currentBody.appendChild(s);
+    scrollStreamToBottom();
+}
+
+function renderClueWords(words, cls) {
+    if (!currentBody) return;
+    currentBody.textContent = '';
     words.forEach((w, i) => {
         const s = document.createElement('span');
         s.className = cls;
         s.textContent = (i ? ' ' : '') + w;
-        els.qBody.appendChild(s);
+        currentBody.appendChild(s);
     });
 }
 
 function renderReadUnread(fullClue) {
+    if (!currentBody) return;
     const words = fullClue.split(' ');
-    renderClue(words, 'word-unread'); // start all unread
-    // Then mark the first wordsRead as read
-    Array.from(els.qBody.children).forEach((span, i) => {
-        span.className = i < wordsRead ? 'word-read' : 'word-unread';
+    currentBody.textContent = '';
+    words.forEach((w, i) => {
+        const s = document.createElement('span');
+        s.className = i < currentWordsRead ? 'word-read' : 'word-unread';
+        s.textContent = (i ? ' ' : '') + w;
+        currentBody.appendChild(s);
     });
 }
 
-function setPlaceholder(text) {
-    els.qBody.textContent = text;
-    els.qBody.classList.add('placeholder');
-    wordsRead = 0;
-}
-
-// ── Question state pill ──────────────────────────────────────────
-function setQuestionState(s) {
-    els.qState.className = 'q-state-pill ' + s;
-    els.qState.textContent = s;
-}
-
-// ── Action zone modes ────────────────────────────────────────────
-function setActionIdle() {
-    els.buzzBtn.classList.add('hidden');
-    els.waiting.classList.add('hidden');
-    els.answer.classList.add('hidden');
-    els.submitBtn.classList.add('hidden');
-}
-function setActionReading() {
-    els.buzzBtn.classList.remove('hidden');
-    els.waiting.classList.add('hidden');
-    els.answer.classList.add('hidden');
-    els.submitBtn.classList.add('hidden');
-    els.timerTrack.classList.add('hidden');
-}
-function setActionLocked(winner) {
-    els.buzzBtn.classList.add('hidden');
-    if (winner === clientId) {
-        els.waiting.classList.add('hidden');
-        els.answer.classList.remove('hidden');
-        els.submitBtn.classList.remove('hidden');
-        els.answer.value = '';
-        els.answer.focus();
-        els.timerTrack.classList.remove('hidden');
-        startTimer(10000);
-    } else {
-        els.waiting.innerHTML = `<strong>${esc(winner)}</strong> is answering…`;
-        els.waiting.classList.remove('hidden');
-        els.answer.classList.add('hidden');
-        els.submitBtn.classList.add('hidden');
-        els.timerTrack.classList.add('hidden');
+function scrollStreamToBottom() {
+    // Smart-scroll: only auto-scroll if user is already near the bottom.
+    const distance = els.stream.scrollHeight - els.stream.scrollTop - els.stream.clientHeight;
+    if (distance < 120) {
+        els.stream.scrollTop = els.stream.scrollHeight;
     }
 }
-function setActionRevealed() {
+
+// ── Action zone ──────────────────────────────────────────────────
+function hideAllAction() {
+    els.actionIdle.classList.add('hidden');
     els.buzzBtn.classList.add('hidden');
     els.waiting.classList.add('hidden');
     els.answer.classList.add('hidden');
     els.submitBtn.classList.add('hidden');
+    els.nextBtn.classList.add('hidden');
     els.timerTrack.classList.add('hidden');
+}
+
+function setActionIdle(text) {
+    hideAllAction();
+    els.actionIdle.textContent = text || 'Press Enter after typing a topic to begin.';
+    els.actionIdle.classList.remove('hidden');
+}
+
+function setActionReading() {
+    hideAllAction();
+    els.buzzBtn.classList.remove('hidden');
+}
+
+function setActionLocked(winner) {
+    hideAllAction();
+    if (winner === clientId) {
+        els.answer.classList.remove('hidden');
+        els.submitBtn.classList.remove('hidden');
+        els.timerTrack.classList.remove('hidden');
+        els.answer.value = '';
+        els.answer.focus();
+        startTimer(10000);
+    } else {
+        els.waiting.innerHTML = `<span class="who">${esc(winner)}</span> is answering…`;
+        els.waiting.classList.remove('hidden');
+    }
+}
+
+function setActionRevealed() {
+    hideAllAction();
     els.nextBtn.classList.remove('hidden');
 }
 
-// ── Reveal banner ────────────────────────────────────────────────
-function showRevealBanner(kind, answer) {
-    els.revealBanner.className = 'reveal-banner ' + kind;
-    els.revealBanner.classList.remove('hidden');
-    els.rbAnswer.textContent = answer;
-}
-function hideRevealBanner() {
-    els.revealBanner.classList.add('hidden');
-}
-
-function showPrivateFeedback(text) {
-    els.pfText.textContent = text;
-    els.privateFb.classList.remove('hidden');
-}
-function hidePrivateFeedback() { els.privateFb.classList.add('hidden'); }
-
-// ── Activity log ─────────────────────────────────────────────────
-function addEvent(kind, tag, html, expandClue) {
-    const el = document.createElement('div');
-    el.className = 'ev ' + kind;
-    el.innerHTML = `<span class="ev-tag">${tag}</span><span class="ev-text">${html}</span>`;
-    if (expandClue) {
-        el.classList.add('expandable');
-        const ex = document.createElement('div');
-        ex.className = 'ev-expanded hidden';
-        ex.textContent = expandClue;
-        el.appendChild(ex);
-        el.addEventListener('click', () => ex.classList.toggle('hidden'));
-    }
-    els.activity.insertBefore(el, els.activity.firstChild); // newest at top
-}
-
-// ── Players + scores ─────────────────────────────────────────────
+// ── Players ──────────────────────────────────────────────────────
 function ingestScores(scores) {
-    // Only update scores for currently-online players.
-    Object.entries(scores).forEach(([id, score]) => {
-        if (players.has(id)) players.get(id).score = score;
+    Object.entries(scores).forEach(([id, sc]) => {
+        if (players.has(id)) players.get(id).score = sc;
     });
     renderPlayers();
 }
@@ -910,7 +856,7 @@ function renderPlayers() {
     els.playersCount.textContent = players.size;
     els.playersList.innerHTML = '';
     if (players.size === 0) {
-        els.playersList.innerHTML = '<div style="color:var(--ink-3);font-size:12px;">no players yet</div>';
+        els.playersList.innerHTML = '<div style="color:var(--ink-3);font-size:12px;">no one yet</div>';
         return;
     }
     Array.from(players.entries())
@@ -925,6 +871,14 @@ function renderPlayers() {
                 <span class="player-score ${cls}">${score > 0 ? '+' : ''}${score}</span>`;
             els.playersList.appendChild(row);
         });
+}
+
+// ── Activity ─────────────────────────────────────────────────────
+function addEvent(kind, tag, html) {
+    const el = document.createElement('div');
+    el.className = 'ev ' + kind;
+    el.innerHTML = `<span class="ev-tag">${tag}</span>${html}`;
+    els.activity.insertBefore(el, els.activity.firstChild);
 }
 
 // ── Timer ────────────────────────────────────────────────────────
@@ -946,12 +900,11 @@ function stopTimer() {
     els.timerFill.style.width = '0%';
 }
 
-// ── Status ───────────────────────────────────────────────────────
+// ── Misc helpers ─────────────────────────────────────────────────
 function setStatus(text) { els.status.textContent = text; }
 
-// ── XSS helper ───────────────────────────────────────────────────
 function esc(s) {
-    return String(s).replace(/[&<>"']/g, c => ({
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
         '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
     })[c]);
 }
@@ -961,29 +914,25 @@ function startGame() {
     const topic = els.topic.value.trim() || 'General Knowledge';
     ws.send(JSON.stringify({ type: 'start', topic }));
     state = 'loading';
-    questionNumber = 0;
-    els.qMeta.textContent = 'preparing…';
-    setQuestionState('loading');
-    setPlaceholder('Curating topics…');
+    // Clear questions list for fresh round
+    els.stream.innerHTML = '';
+    els.stream.appendChild(els.streamEmpty);
+    els.streamEmpty.textContent = 'Curating topics…';
+    els.streamEmpty.classList.remove('hidden');
+    currentCard = null;
+    currentBody = null;
+    currentWordsRead = 0;
+    setActionIdle('Generating questions…');
     els.activity.innerHTML = '';
-    els.startBtn.classList.add('hidden');
-    setActionIdle();
-    hideRevealBanner();
-    hidePrivateFeedback();
 }
 
 function goNext() {
     ws.send(JSON.stringify({ type: 'next' }));
     state = 'loading';
-    questionNumber++;
-    els.qMeta.textContent = `Question ${questionNumber}`;
-    setQuestionState('loading');
-    setPlaceholder('Loading next question…');
-    els.nextBtn.classList.add('hidden');
-    setActionIdle();
-    hideRevealBanner();
-    hidePrivateFeedback();
-    wordsRead = 0;
+    currentCard = null;
+    currentBody = null;
+    currentWordsRead = 0;
+    setActionIdle('Loading next question…');
 }
 
 function buzz() {
@@ -999,25 +948,22 @@ function submitAnswer() {
 function resetUI() {
     state = 'idle';
     isBuzzer = false;
-    wordsRead = 0;
-    questionNumber = 0;
+    currentCard = null;
+    currentBody = null;
+    currentWordsRead = 0;
     stopTimer();
-    setPlaceholder('Pick a topic and start a round to begin.');
-    els.qMeta.textContent = '— · —';
-    setQuestionState('idle');
+    els.stream.innerHTML = '';
+    els.stream.appendChild(els.streamEmpty);
+    els.streamEmpty.textContent = 'Pick a topic and start a round to begin.';
+    els.streamEmpty.classList.remove('hidden');
     els.activity.innerHTML = '';
-    // Keep players list (still connected) — just zero scores
     players.forEach(p => { p.score = 0; });
     renderPlayers();
     setActionIdle();
-    els.startBtn.classList.remove('hidden');
-    els.nextBtn.classList.add('hidden');
-    hideRevealBanner();
-    hidePrivateFeedback();
     setStatus('');
 }
 
-// ── Wire up handlers ─────────────────────────────────────────────
+// ── Wire up ──────────────────────────────────────────────────────
 els.startBtn.addEventListener('click', startGame);
 els.nextBtn.addEventListener('click', goNext);
 els.buzzBtn.addEventListener('click', buzz);
@@ -1033,9 +979,10 @@ window.addEventListener('keydown', e => {
     if (e.key.toLowerCase() === 'n' && state === 'revealed') goNext();
 });
 
-// Initial player render
+// Initial: register self and show idle action
 players.set(clientId, { score: 0 });
 renderPlayers();
+setActionIdle();
 </script>
 </body>
 </html>

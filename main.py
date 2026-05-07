@@ -162,6 +162,7 @@ class GameState:
         self.buzzed_players: set = set()
         self.current_words: List[str] = []
         self.stream_position: int = 0
+        self.question_number: int = 0
 
     async def connect(self, websocket: WebSocket, client_id: str):
         await websocket.accept()
@@ -174,8 +175,15 @@ class GameState:
             "type": "state_sync",
             "players": list(self.client_ids.values()),
             "scores": self.scores,
+            "question_number": self.question_number,
         }
-        if self.current_words and self.stream_position > 0:
+        # Only attach the live clue if a question is still in flight
+        # (actively streaming words, or paused on a buzz). After reveal/dead
+        # the words are stale and shouldn't be shown as a fresh card.
+        is_live = self.buzzer_locked or (
+            self.current_words and 0 < self.stream_position < len(self.current_words)
+        )
+        if is_live:
             sync["partial_clue"] = " ".join(self.current_words[:self.stream_position])
             sync["words_read"] = self.stream_position
             sync["locked"] = self.buzzer_locked
@@ -237,6 +245,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 topic = message.get("topic", "General Knowledge")
                 await game.stop_streaming()
                 game.reset_buzzer()
+                game.question_number = 0  # fresh round
 
                 game.topic_queue = []
                 while not game.pregenerated_clues.empty():
@@ -297,21 +306,14 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                         })
                         game.reset_buzzer()
                     else:
-                        # Wrong answer — feedback only to the guesser (don't leak the answer)
-                        await websocket.send_text(json.dumps({
-                            "type": "wrong_buzz",
-                            "guesser": client_id,
-                            "guess": guess,
-                            "feedback": feedback,  # private: may reveal the answer
-                            "scores": game.scores,
-                        }))
-                        # Public version for other players: just the fact, no feedback
-                        await game.broadcast_except({
+                        # Wrong answer — strip feedback entirely (no hints to anyone,
+                        # not even the guesser). Just announce the fact and resume.
+                        await game.broadcast({
                             "type": "wrong_buzz",
                             "guesser": client_id,
                             "guess": guess,
                             "scores": game.scores,
-                        }, websocket)
+                        })
                         game.reset_buzzer()
                         game.streaming_task = asyncio.create_task(resume_streaming())
 
@@ -323,6 +325,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 game.reset_buzzer()
                 game.buzzed_players = set()
                 game.scores = {}
+                game.question_number = 0
                 await game.broadcast({"type": "reset"})
 
     except WebSocketDisconnect:
@@ -357,6 +360,8 @@ async def stream_next_clue(client_id: str):
         game.current_words = clue.split()
         game.stream_position = 0
         game.buzzed_players = set()
+        game.question_number += 1
+        await game.broadcast({"type": "question_start", "question_number": game.question_number})
 
         for i, word in enumerate(game.current_words):
             if game.buzzer_locked:
