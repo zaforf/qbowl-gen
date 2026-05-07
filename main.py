@@ -290,7 +290,7 @@ async def stream_next_clue(client_id: str):
                 s += "."
             
             await game.broadcast({"type": "clue_chunk", "text": s})
-            await asyncio.sleep(2.5)
+            await asyncio.sleep(1.6)
             
     except asyncio.CancelledError:
         pass
