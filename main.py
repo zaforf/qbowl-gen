@@ -123,13 +123,10 @@ gemini_client = OpenAI(
 )
 
 # ── Models ────────────────────────────────────────────────────────
-# Two-phase pipeline:
-#  1) Bootstrap (until 3 clues ready): one writer call picks topic AND writes
-#     the tossup, using fast Llama 70B. Lowest latency to first clue.
-#  2) Steady state: architect picks topics in batches (Gemma 27B, smart but
-#     fast); writer turns each topic+facts into a tossup. Writer model is
-#     queue-depth-aware: fast Llama when shallow (≤ FAST_MODEL_THRESHOLD),
-#     slow Gemini Flash Lite when deep — saves Groq quota.
+# Up to MAX_IN_FLIGHT writer tasks run concurrently. When the architect
+# topic queue is empty, writers pick their own topic (writer-pick path).
+# Model is chosen at dispatch time: fast Llama when ready+in_flight ≤ FAST_MODEL_THRESHOLD,
+# slow Gemini Flash Lite otherwise — saves Groq quota once buffer is comfortable.
 MODEL_ARCHITECT    = "gemini-3.1-flash-lite"      # Google; falls back to MODEL_FALLBACK on RPM limit
 MODEL_WRITER_FAST  = "llama-3.3-70b-versatile"   # Groq, ~few seconds
 MODEL_WRITER_SLOW  = "gemini-3.1-flash-lite"      # Google; falls back to MODEL_FALLBACK on RPM limit
@@ -337,7 +334,7 @@ class Brain:
 
     async def generate_topic_and_clue(self, general_topic: str, avoid: Optional[List[str]] = None,
                                        model: str = MODEL_WRITER_FAST):
-        """Combined writer: pick topic + write tossup in one call. For bootstrap.
+        """Combined writer: pick topic + write tossup in one call.
         Returns (topic_name, primary_answer, aliases, clue) or (None, None, None, None)."""
         user_msg = (
             f"Subject: {general_topic}. Pick one specific topic and write a tossup."
@@ -444,11 +441,11 @@ ANSWER_WINDOW_MS = 10000 # time the buzzer has to answer
 WORD_PACE_S = 0.20
 
 # ── Topic queue tuning ──────────────────────────────────────────────
-BOOTSTRAP_TARGET     = 3   # ready clues to produce via fast combined writer
 TOPUP_TOPIC_FETCH    = 3   # architect batch size in steady state
-LOW_QUEUE_THRESHOLD  = 4   # top up when (topic_queue + ready clues) < this
-FAST_MODEL_THRESHOLD = 2   # writer uses fast model when ready clues ≤ this
-MAX_PREGENERATED     = 4   # writer idles when ready clues ≥ this (saves tokens)
+LOW_QUEUE_THRESHOLD  = 4   # fetch more architect topics when pool < this
+FAST_MODEL_THRESHOLD = 1   # writer uses fast model when ready clues ≤ this
+MAX_PREGENERATED     = 4   # cap total in-flight+ready to avoid burning tokens
+MAX_IN_FLIGHT        = 1   # max concurrent writer tasks
 
 # ── Persistent global "already used" topic log ──────────────────────
 USED_TOPICS_FILE = "used_topics.json"
@@ -500,6 +497,10 @@ class GameState:
         self.current_answer_aliases: List[str] = []     # accepted alternates
         self.current_clue: Optional[str] = None
 
+        # Late-join history (cleared on new round/reset)
+        self.completed_questions: List[dict] = []   # {qnum, answer, result, who}
+        self.activity_log: List[dict] = []          # {kind, ...}
+
         # Background tasks
         self.streaming_task: Optional[asyncio.Task] = None
         self.bg_generator_task: Optional[asyncio.Task] = None
@@ -549,6 +550,9 @@ class GameState:
             "scores": self.scores,
             "question_number": self.question_number,
             "phase": self.phase,
+            "topic": self.current_round_topic,
+            "completed_questions": self.completed_questions,
+            "activity_log": self.activity_log,
         }
         # Attach live clue + winner when a question is mid-flight
         if self.phase in (PHASE_READING, PHASE_BUZZ_WINDOW, PHASE_ANSWERING):
@@ -687,6 +691,7 @@ async def force_wrong_answer(buzzer: str, guess: str):
     game.scores[buzzer] = game.scores.get(buzzer, 0) - 5
     game.buzzed_players.add(buzzer)
 
+    game.activity_log.append({"kind": "wrong", "winner": buzzer, "guess": guess})
     await game.broadcast({
         "type": "wrong_buzz",
         "guesser": buzzer,
@@ -715,6 +720,14 @@ async def declare_dead():
         return
     await game.cancel_timer()
     game.phase = PHASE_REVEALED
+    game.completed_questions.append({
+        "qnum": game.question_number,
+        "answer": game.current_answer,
+        "clue": game.current_clue,
+        "result": "dead",
+        "who": None,
+    })
+    game.activity_log.append({"kind": "dead", "answer": game.current_answer, "qnum": game.question_number})
     await game.broadcast({
         "type": "question_dead",
         "answer": game.current_answer,
@@ -752,28 +765,40 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
 
             if mtype == "start":
                 topic = _sanitize(message.get("topic", "General Knowledge"), 60) or "General Knowledge"
-                await game.stop_streaming()
-                await game.cancel_timer()
-                game.reset_buzzer()
-                game.phase = PHASE_LOADING
-                game.question_number = 0
-                game.current_words = []
-                game.stream_position = 0
-                game.buzzed_players = set()
-                game.session_used_topics = []  # fresh session avoid-list
-                game.current_round_topic = topic
 
-                game.topic_queue = []
-                while not game.pregenerated_clues.empty():
-                    game.pregenerated_clues.get_nowait()
+                # Same topic as current round — treat as "next question"
+                if (topic.lower() == (game.current_round_topic or "").lower()
+                        and game.phase != PHASE_IDLE):
+                    await game.stop_streaming()
+                    await game.cancel_timer()
+                    game.reset_buzzer()
+                    game.buzzed_players = set()
+                    game.phase = PHASE_LOADING
+                    game.streaming_task = asyncio.create_task(stream_next_clue(client_id))
+                else:
+                    await game.stop_streaming()
+                    await game.cancel_timer()
+                    game.reset_buzzer()
+                    game.phase = PHASE_LOADING
+                    game.question_number = 0
+                    game.current_words = []
+                    game.stream_position = 0
+                    game.buzzed_players = set()
+                    game.session_used_topics = []
+                    game.current_round_topic = topic
+                    game.completed_questions = []
+                    game.activity_log = [{"kind": "round_started", "starter": client_id, "topic": topic}]
 
-                await game.broadcast({"type": "round_started", "topic": topic, "starter": client_id})
+                    game.topic_queue = []
+                    while not game.pregenerated_clues.empty():
+                        game.pregenerated_clues.get_nowait()
 
-                # bg_generator owns the architect call (initial fetch + top-up)
-                if game.bg_generator_task:
-                    game.bg_generator_task.cancel()
-                game.bg_generator_task = asyncio.create_task(background_generator(topic))
-                game.streaming_task = asyncio.create_task(stream_next_clue(client_id))
+                    await game.broadcast({"type": "round_started", "topic": topic, "starter": client_id})
+
+                    if game.bg_generator_task:
+                        game.bg_generator_task.cancel()
+                    game.bg_generator_task = asyncio.create_task(background_generator(topic))
+                    game.streaming_task = asyncio.create_task(stream_next_clue(client_id))
 
             elif mtype == "next":
                 await game.stop_streaming()
@@ -798,6 +823,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     await game.stop_streaming()
                     await game.cancel_timer()
                     game.winner = client_id
+                    game.activity_log.append({"kind": "buzz", "winner": client_id})
                     await game.broadcast({
                         "type": "lock",
                         "winner": client_id,
@@ -823,6 +849,15 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     game.scores[client_id] = game.scores.get(client_id, 0) + 10
                     game.buzzed_players.add(client_id)
                     game.phase = PHASE_REVEALED
+                    game.completed_questions.append({
+                        "qnum": game.question_number,
+                        "answer": game.current_answer,
+                        "clue": game.current_clue,
+                        "result": "correct",
+                        "who": client_id,
+                    })
+                    game.activity_log.append({"kind": "correct", "winner": client_id,
+                                              "answer": game.current_answer, "qnum": game.question_number})
                     await game.broadcast({
                         "type": "reveal",
                         "correct": True,
@@ -855,6 +890,8 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                 game.stream_position = 0
                 game.session_used_topics = []
                 game.current_round_topic = None
+                game.completed_questions = []
+                game.activity_log = []
                 game.topic_queue = []
                 while not game.pregenerated_clues.empty():
                     game.pregenerated_clues.get_nowait()
@@ -931,105 +968,93 @@ def _avoid_list() -> List[str]:
 
 
 async def background_generator(topic: str):
-    """Two-phase generator for the question pipeline.
+    """Parallel writer pipeline.
 
-    Phase 1 (bootstrap): until BOOTSTRAP_TARGET clues are ready, the writer
-    picks a topic AND writes the tossup in a single fast call (Llama 70B).
-    This minimizes time-to-first-clue.
-
-    Phase 2 (steady state): architect picks 5 topics in one call (Gemma 27B);
-    writer turns each topic+facts into a tossup. Writer model is depth-aware:
-    fast Llama when ready clues ≤ FAST_MODEL_THRESHOLD, slow Gemini Flash Lite
-    when above (saves Groq quota).
+    All pipeline stages run as concurrent asyncio Tasks — nothing blocks the loop.
+    Writers consume architect topics when available, writer-pick otherwise.
+    Architect fires as a task when pool is low; flag prevents double-dispatch.
+    Model chosen at dispatch time: fast when ready+in_flight ≤ FAST_MODEL_THRESHOLD.
     """
-    bootstrap_done = False
+    in_flight = 0
+    architect_running = False
+
+    async def do_architect():
+        nonlocal architect_running
+        try:
+            topics = await brain.generate_topic_list(
+                topic, avoid=_avoid_list(), n=TOPUP_TOPIC_FETCH,
+            )
+            added = 0
+            for t in topics:
+                name = (t.get("name") or "").strip()
+                if name and name not in game.session_used_topics:
+                    game.topic_queue.append(t)
+                    _track_session(name)
+                    added += 1
+            print(f"[architect] queued {added}/{len(topics)} topics")
+        except Exception as e:
+            print(f"[architect] error: {e}")
+        finally:
+            architect_running = False
+
+    async def do_write(td=None):
+        nonlocal in_flight
+        try:
+            ready = game.pregenerated_clues.qsize()
+            model = MODEL_WRITER_FAST if ready + in_flight <= FAST_MODEL_THRESHOLD else MODEL_WRITER_SLOW
+
+            if td is None:
+                name, answer, aliases, clue = await brain.generate_topic_and_clue(
+                    topic, avoid=_avoid_list(), model=model,
+                )
+                if not (name and answer and clue):
+                    return
+                duplicate = name in game.session_used_topics or any(
+                    a in game.session_used_topics for a in (aliases or [])
+                )
+                if duplicate:
+                    print(f"[writer-pick] dropping '{name}' — duplicate")
+                    return
+                game.pregenerated_clues.put_nowait((name, answer, aliases, clue))
+                _track_session(name)
+                print(f"[writer-pick] +1 '{name}' via {model} (ready={game.pregenerated_clues.qsize()})")
+            else:
+                answer, aliases, clue = await brain.generate_clue_from_facts(
+                    td, avoid=_avoid_list(), model=model,
+                )
+                if not (answer and clue):
+                    return
+                name = td.get("name") or answer
+                used = set(game.session_used_topics) - {name}
+                if name in used or any(a in used for a in (aliases or [])):
+                    print(f"[writer] dropping '{name}' — alias collision")
+                    return
+                game.pregenerated_clues.put_nowait((name, answer, aliases, clue))
+                print(f"[writer] +1 '{name}' aliases={aliases} via {model} (ready={game.pregenerated_clues.qsize()})")
+        except Exception as e:
+            print(f"[writer] error: {e}")
+        finally:
+            in_flight -= 1
+
     try:
         while True:
             ready = game.pregenerated_clues.qsize()
 
-            # ── Phase 1: bootstrap with combined fast writer ──
-            if not bootstrap_done:
-                if ready >= BOOTSTRAP_TARGET:
-                    bootstrap_done = True
-                    continue
-                try:
-                    name, answer, aliases, clue = await brain.generate_topic_and_clue(
-                        topic, avoid=_avoid_list(), model=MODEL_WRITER_FAST,
-                    )
-                except Exception as e:
-                    print(f"[bootstrap] {e}")
-                    await asyncio.sleep(2)
-                    continue
-                # Dedup against session topics by primary AND any alias
-                # (catches "Lev Tolstoy" coming back when "Leo Tolstoy" used)
-                duplicate = name in game.session_used_topics or any(
-                    a in game.session_used_topics for a in (aliases or [])
-                )
-                if name and answer and clue and not duplicate:
-                    game.pregenerated_clues.put_nowait((name, answer, aliases, clue))
-                    _track_session(name)
-                    print(f"[bootstrap] +1 '{name}' aliases={aliases} (ready={game.pregenerated_clues.qsize()})")
-                else:
-                    reason = "duplicate alias" if duplicate else "no usable result"
-                    print(f"[bootstrap] {reason}, retrying")
-                    await asyncio.sleep(1)
-                continue
+            # Dispatch writer tasks up to MAX_IN_FLIGHT / MAX_PREGENERATED cap.
+            # Uses architect topics when available, writer-pick otherwise.
+            while ready + in_flight < MAX_PREGENERATED and in_flight < MAX_IN_FLIGHT:
+                td = game.topic_queue.pop(0) if game.topic_queue else None
+                in_flight += 1
+                asyncio.create_task(do_write(td))
 
-            # ── Phase 2: architect → writer pipeline ──
-            pool = ready + len(game.topic_queue)
+            # Dispatch architect when pool is low and queue is empty.
+            if (not architect_running
+                    and not game.topic_queue
+                    and ready + len(game.topic_queue) + in_flight < LOW_QUEUE_THRESHOLD):
+                architect_running = True
+                asyncio.create_task(do_architect())
 
-            # Top up topics from the architect: only when total pool is low
-            # AND the queue has been drained (no point asking for more raw
-            # topics while writer is still working through a previous batch).
-            if pool < LOW_QUEUE_THRESHOLD and not game.topic_queue:
-                try:
-                    topics = await brain.generate_topic_list(
-                        topic, avoid=_avoid_list(), n=TOPUP_TOPIC_FETCH,
-                    )
-                except Exception as e:
-                    print(f"[architect] {e}")
-                    await asyncio.sleep(3)
-                    continue
-                added = 0
-                for t in topics:
-                    name = (t.get("name") or "").strip()
-                    if name and name not in game.session_used_topics:
-                        game.topic_queue.append(t)
-                        _track_session(name)
-                        added += 1
-                print(f"[architect] queued {added}/{len(topics)} topics")
-
-            # Process queued topics into clues when ready < MAX_PREGENERATED.
-            # This caps the buffer so we don't burn tokens writing clues that
-            # sit in the queue for many rounds. Writer model is depth-aware:
-            # fast (Llama) when ready ≤ FAST_MODEL_THRESHOLD, slow (Gemini)
-            # when buffer is comfortable.
-            if game.topic_queue and ready < MAX_PREGENERATED:
-                td = game.topic_queue.pop(0)
-                use_fast = ready <= FAST_MODEL_THRESHOLD
-                writer_model = MODEL_WRITER_FAST if use_fast else MODEL_WRITER_SLOW
-                try:
-                    answer, aliases, clue = await brain.generate_clue_from_facts(
-                        td, avoid=_avoid_list(), model=writer_model,
-                    )
-                except Exception as e:
-                    print(f"[writer] '{td.get('name')}': {e}")
-                    await asyncio.sleep(2)
-                    continue
-                if not (answer and clue):
-                    continue
-                # Dedup: if writer revealed an alias matching a used topic,
-                # drop this clue rather than queue a duplicate.
-                name = td.get("name") or answer
-                used = set(game.session_used_topics) - {name}  # don't reject self
-                if name in used or any(a in used for a in (aliases or [])):
-                    print(f"[writer] dropping '{name}' — alias collides with prior topic")
-                    continue
-                game.pregenerated_clues.put_nowait((name, answer, aliases, clue))
-                print(f"[writer] +1 '{name}' aliases={aliases} via {writer_model} "
-                      f"(ready={game.pregenerated_clues.qsize()})")
-            else:
-                await asyncio.sleep(0.5)
+            await asyncio.sleep(0.5)
     except asyncio.CancelledError:
         pass
 

@@ -497,6 +497,7 @@ const API_BASE_URL = resolveApiBase();
 // ── State ────────────────────────────────────────────────────────
 // Mirror server phase. Source of truth = server messages.
 let state = 'idle';            // idle | loading | reading | locked | revealed
+let currentRoundTopic = null;
 let isBuzzer = false;
 let timerInterval = null;
 let currentCard = null;
@@ -602,6 +603,7 @@ function handleMessage({ data }) {
 
     case 'round_started':
         // Mirror the topic everywhere; clear local stream for the new round
+        currentRoundTopic = msg.topic || null;
         els.topic.value = msg.topic || '';
         state = 'loading';
         els.stream.innerHTML = '';
@@ -645,7 +647,49 @@ function handleMessage({ data }) {
         });
         if (msg.scores) ingestScores(msg.scores);
         renderPlayers();
-        // Late-join mid-question: rebuild the active card
+
+        // Restore topic so late joiner can click Start (same topic = next question)
+        if (msg.topic) {
+            currentRoundTopic = msg.topic;
+            els.topic.value = msg.topic;
+        }
+
+        // Replay completed question cards (oldest → bottom, newest → top)
+        if (msg.completed_questions && msg.completed_questions.length) {
+            if (els.streamEmpty.parentNode) els.streamEmpty.remove();
+            msg.completed_questions.forEach(q => {
+                const card = document.createElement('div');
+                const isCorrect = q.result === 'correct';
+                card.className = 'qcard collapsed';
+                card.dataset.state = isCorrect ? 'revealed' : 'dead';
+                const answerHref = wikipediaSearchHref(q.answer);
+                const answerHTML = answerHref
+                    ? `<a class="answer answer-link" href="${esc(answerHref)}" target="_blank" rel="noopener noreferrer">${renderInline(q.answer)}</a>`
+                    : `<span class="answer">${renderInline(q.answer)}</span>`;
+                const metaText = isCorrect ? `${q.who} ✓` : 'dead';
+                card.innerHTML = `
+                    <div class="qhead">
+                        <span class="qnum">Question ${q.qnum}</span>
+                        <span class="qstate ${isCorrect ? 'revealed' : 'dead'}">${isCorrect ? 'revealed' : 'dead'}</span>
+                    </div>
+                    <div class="qbody">${q.clue ? renderInline(q.clue) : ''}</div>
+                    <div class="qsummary"><span class="qnum">Q${q.qnum}</span>${answerHTML}<span class="meta">${esc(metaText)}</span></div>`;
+                attachResult(card, q.answer,
+                    isCorrect ? `<span class="who">${esc(q.who)}</span>` : 'no correct buzz',
+                    answerHref);
+                _wireAnswerLinks(card);
+                applyKatex(card);
+                card.addEventListener('click', () => {
+                    const s = card.dataset.state;
+                    if (s !== 'revealed' && s !== 'dead') return;
+                    if (window.getSelection && window.getSelection().toString().length > 0) return;
+                    card.classList.toggle('collapsed');
+                });
+                els.stream.insertBefore(card, els.stream.firstChild);
+            });
+        }
+
+        // Late-join mid-question: rebuild the active card (goes on top of history)
         if (msg.partial_clue) {
             currentQNum = msg.question_number || 0;
             currentCard = createActiveCard(currentQNum);
@@ -656,6 +700,7 @@ function handleMessage({ data }) {
             currentBody.innerHTML = window.marked ? marked.parseInline(balanced) : esc(balanced);
             applyKatex(currentBody);
         }
+
         // Phase-driven UI
         if (msg.phase === 'reading' || msg.phase === 'buzz_window') {
             state = 'reading';
@@ -666,10 +711,38 @@ function handleMessage({ data }) {
             isBuzzer = (msg.winner === clientId);
             if (currentCard) setCardState(currentCard, 'locked', `${msg.winner} answering`);
             action(isBuzzer ? 'answer' : 'waiting', { who: msg.winner });
+        } else if (msg.phase === 'revealed' || msg.phase === 'loading') {
+            action('next');
         }
+
         // Resume an active timer countdown
         if (msg.timer && msg.timer.remaining_ms > 0) {
             showTimer(msg.timer.remaining_ms);
+        }
+
+        // Replay activity log (addEvent inserts at top, so iterate forward = oldest at bottom)
+        if (msg.activity_log && msg.activity_log.length) {
+            msg.activity_log.forEach(ev => {
+                if (ev.kind === 'round_started') {
+                    addEvent('join', `<span class="who">${esc(ev.starter)}</span> started a round on "${esc(ev.topic)}"`);
+                } else if (ev.kind === 'buzz') {
+                    addEvent('lock', `<span class="who">${esc(ev.winner)}</span> buzzed`);
+                } else if (ev.kind === 'wrong') {
+                    addEvent('wrong', `<span class="who">${esc(ev.winner)}</span> said "${esc(ev.guess) || '—'}" — wrong`);
+                } else if (ev.kind === 'correct') {
+                    const href = wikipediaSearchHref(ev.answer);
+                    const answerEvent = href
+                        ? `<a class="answer-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${renderInline(ev.answer)}</a>`
+                        : renderInline(ev.answer);
+                    addEvent('correct', `<span class="who">${esc(ev.winner)}</span> · ${answerEvent}`);
+                } else if (ev.kind === 'dead') {
+                    const href = wikipediaSearchHref(ev.answer);
+                    const answerEvent = href
+                        ? `<a class="answer-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${renderInline(ev.answer)}</a>`
+                        : renderInline(ev.answer);
+                    addEvent('dead', `dead · ${answerEvent}`);
+                }
+            });
         }
         break;
 
@@ -1045,17 +1118,25 @@ function esc(s) {
 // ── Game actions ────────────────────────────────────────────────
 function startGame() {
     const topic = els.topic.value.trim() || 'General Knowledge';
+    const sameTopic = topic.toLowerCase() === (currentRoundTopic || '').toLowerCase();
     sendMessage({ type: 'start', topic });
-    state = 'loading';
-    els.stream.innerHTML = '';
-    els.streamEmpty.textContent = 'Curating topics…';
-    els.stream.appendChild(els.streamEmpty);
-    currentCard = null;
-    currentBody = null;
-    currentWordsRead = 0;
-    currentQNum = 0;
-    action('loading');
-    els.activity.innerHTML = '';
+    if (sameTopic) {
+        // Same topic — just advance to next question, keep logs intact
+        goNext();
+    } else {
+        // New round — full reset
+        currentRoundTopic = topic;
+        state = 'loading';
+        els.stream.innerHTML = '';
+        els.streamEmpty.textContent = 'Curating topics…';
+        els.stream.appendChild(els.streamEmpty);
+        currentCard = null;
+        currentBody = null;
+        currentWordsRead = 0;
+        currentQNum = 0;
+        action('loading');
+        els.activity.innerHTML = '';
+    }
 }
 
 function goNext() {
