@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>qbowl-gen</title>
+    <!-- KaTeX for math rendering -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css" crossorigin="anonymous">
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js" crossorigin="anonymous"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js" crossorigin="anonymous"></script>
+    <!-- marked for markdown -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
     <style>
         :root {
             --bg:        #fafaf9;
@@ -485,6 +491,7 @@ let timerInterval = null;
 let currentCard = null;
 let currentBody = null;
 let currentWordsRead = 0;
+let streamedWords = [];   // full word list for current question (for re-render)
 let currentQNum = 0;
 const players = new Map();
 
@@ -625,14 +632,10 @@ function handleMessage({ data }) {
             currentCard = createActiveCard(currentQNum);
             currentBody = currentCard.querySelector('.qbody');
             currentWordsRead = msg.words_read || 0;
-            const words = msg.partial_clue.split(' ');
-            currentBody.textContent = '';
-            words.forEach((w, i) => {
-                const s = document.createElement('span');
-                s.className = 'word-read';
-                s.textContent = (i ? ' ' : '') + w;
-                currentBody.appendChild(s);
-            });
+            streamedWords = msg.partial_clue.split(' ');
+            const balanced = _balanceDollars(msg.partial_clue);
+            currentBody.innerHTML = window.marked ? marked.parseInline(balanced) : esc(balanced);
+            applyKatex(currentBody);
         }
         // Phase-driven UI
         if (msg.phase === 'reading' || msg.phase === 'buzz_window') {
@@ -711,7 +714,7 @@ function handleMessage({ data }) {
         }
         action('next');
         addEvent('correct',
-            `<span class="who">${esc(msg.winner)}</span> · ${esc(msg.answer)}`);
+            `<span class="who">${esc(msg.winner)}</span> · ${renderInline(msg.answer)}`);
         if (msg.scores) ingestScores(msg.scores);
         break;
     }
@@ -727,7 +730,7 @@ function handleMessage({ data }) {
             setSummary(currentCard, fullAnswer, 'dead');
         }
         action('next');
-        addEvent('dead', `dead · ${esc(msg.answer)}`);
+        addEvent('dead', `dead · ${renderInline(msg.answer)}`);
         break;
     }
 
@@ -799,6 +802,7 @@ function startNewQuestion(qnum) {
     currentCard = createActiveCard(currentQNum);
     currentBody = currentCard.querySelector('.qbody');
     currentWordsRead = 0;
+    streamedWords = [];
     action('reading');
     els.stream.scrollTop = 0; // active card is at the top — keep view there
 }
@@ -851,33 +855,76 @@ function attachResult(card, answer, metaHTML) {
         const sum = card.querySelector('.qsummary');
         if (sum) card.insertBefore(res, sum); else card.appendChild(res);
     }
-    res.innerHTML = `<span>Answer</span><span class="answer">${esc(answer)}</span><span class="meta">${metaHTML}</span>`;
+    res.innerHTML = `<span>Answer</span><span class="answer">${renderInline(answer)}</span><span class="meta">${metaHTML}</span>`;
+    applyKatex(res);
 }
 
 function setSummary(card, answer, metaText) {
     const sum = card.querySelector('.qsummary');
     if (!sum) return;
-    sum.innerHTML = `<span class="qnum">Q${currentQNum}</span><span class="answer">${esc(answer)}</span><span class="meta">${esc(metaText)}</span>`;
+    sum.innerHTML = `<span class="qnum">Q${currentQNum}</span><span class="answer">${renderInline(answer)}</span><span class="meta">${esc(metaText)}</span>`;
+    applyKatex(sum);
+}
+
+// ── Rendering helpers ───────────────────────────────────────────
+// Balances unclosed $ so KaTeX doesn't crash on partial LaTeX mid-stream.
+function _balanceDollars(text) {
+    const singles = (text.match(/(?<!\$)\$(?!\$)/g) || []).length;
+    return singles % 2 !== 0 ? text + '$' : text;
+}
+
+// Render inline markdown + LaTeX into a string of HTML.
+function renderInline(text) {
+    text = _balanceDollars(text);
+    // marked.parseInline handles *italic*, **bold**, `code`, etc.
+    return window.marked ? marked.parseInline(text) : esc(text);
+}
+
+// Apply KaTeX auto-render to an element (runs after innerHTML is set).
+function applyKatex(el) {
+    if (!window.renderMathInElement) return;
+    renderMathInElement(el, {
+        delimiters: [
+            { left: '$$', right: '$$', display: true  },
+            { left: '$',  right: '$',  display: false },
+        ],
+        throwOnError: false,
+    });
 }
 
 function appendWord(word) {
     if (!currentBody) return;
-    const s = document.createElement('span');
-    s.className = 'word-read';
-    s.textContent = (currentBody.children.length ? ' ' : '') + word;
-    currentBody.appendChild(s);
+    streamedWords.push(word);
+    // Re-render the whole accumulated text so KaTeX can see complete $…$
+    // pairs — per-word spans break delimiter matching across elements.
+    const text = streamedWords.join(' ');
+    const balanced = _balanceDollars(text);
+    currentBody.innerHTML = window.marked ? marked.parseInline(balanced) : esc(balanced);
+    applyKatex(currentBody);
 }
 
 function renderReadUnread(fullClue) {
     if (!currentBody) return;
     const words = fullClue.split(' ');
-    currentBody.textContent = '';
-    words.forEach((w, i) => {
-        const s = document.createElement('span');
-        s.className = i < currentWordsRead ? 'word-read' : 'word-unread';
-        s.textContent = (i ? ' ' : '') + w;
-        currentBody.appendChild(s);
-    });
+    const readText  = words.slice(0, currentWordsRead).join(' ');
+    const unreadText = words.slice(currentWordsRead).join(' ');
+
+    currentBody.innerHTML = '';
+
+    if (readText) {
+        const el = document.createElement('span');
+        el.className = 'word-read';
+        el.innerHTML = renderInline(readText);
+        currentBody.appendChild(el);
+    }
+    if (unreadText) {
+        if (readText) currentBody.appendChild(document.createTextNode(' '));
+        const el = document.createElement('span');
+        el.className = 'word-unread';
+        el.innerHTML = renderInline(unreadText);
+        currentBody.appendChild(el);
+    }
+    applyKatex(currentBody);
 }
 
 // ── Players + activity ──────────────────────────────────────────
