@@ -1023,11 +1023,28 @@ function appendWord(word) {
     applyKatex(currentBody);
 }
 
+function latexSafeSplit(words, count) {
+    // If splitting at `count` lands inside a $...$ expression, extend to
+    // the word that contains the closing $ so LaTeX is never bisected.
+    if (count <= 0) return 0;
+    if (count >= words.length) return words.length;
+    let dollars = 0;
+    for (let i = 0; i < count; i++)
+        dollars += (words[i].match(/(?<!\$)\$(?!\$)/g) || []).length;
+    if (dollars % 2 === 0) return count;
+    for (let i = count; i < words.length; i++) {
+        dollars += (words[i].match(/(?<!\$)\$(?!\$)/g) || []).length;
+        if (dollars % 2 === 0) return i + 1;
+    }
+    return words.length;
+}
+
 function renderReadUnread(fullClue) {
     if (!currentBody) return;
     const words = fullClue.split(' ');
-    const readText  = words.slice(0, currentWordsRead).join(' ');
-    const unreadText = words.slice(currentWordsRead).join(' ');
+    const split = latexSafeSplit(words, currentWordsRead);
+    const readText   = words.slice(0, split).join(' ');
+    const unreadText = words.slice(split).join(' ');
 
     currentBody.innerHTML = '';
 
