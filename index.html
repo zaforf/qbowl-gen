@@ -324,6 +324,12 @@
         .hint.muted { cursor: default; color: var(--ink-3); }
         .hint.muted:hover { color: var(--ink-3); }
         .hint.muted .key { color: var(--ink-3); }
+        .hint-sep { color: var(--ink-3); font-size: 12px; user-select: none; }
+
+        @media (hover: none) {
+            .hint { padding: 10px 4px; font-size: 14px; }
+            .hint .key { padding: 4px 10px; font-size: 12px; }
+        }
 
         .timer {
             margin-top: 10px;
@@ -445,6 +451,11 @@
                     <span class="key">space</span>
                     buzz in
                 </span>
+                <span class="hint-sep hidden" id="hint-sep-skip">·</span>
+                <span class="hint" id="hint-skip">
+                    <span class="key">S</span>
+                    skip
+                </span>
                 <span class="hint muted" id="hint-waiting"></span>
                 <input id="answer-input" type="text" class="input answer-input hidden"
                        placeholder="type your answer…" autocomplete="off">
@@ -529,6 +540,8 @@ const els = {
     answer: $('answer-input'),
     hintIdle: $('hint-idle'),
     hintBuzz: $('hint-buzz'),
+    hintSkip: $('hint-skip'),
+    hintSepSkip: $('hint-sep-skip'),
     hintWaiting: $('hint-waiting'),
     hintNext: $('hint-next'),
     hintLoading: $('hint-loading'),
@@ -545,11 +558,15 @@ els.me.textContent = clientId;
 // Modes are mutually exclusive. The timer is controlled INDEPENDENTLY
 // (by showTimer/hideTimer) because it appears in multiple modes.
 function action(mode, opts = {}) {
-    [els.hintIdle, els.hintBuzz, els.hintWaiting,
+    [els.hintIdle, els.hintBuzz, els.hintSkip, els.hintSepSkip, els.hintWaiting,
      els.answer, els.hintNext, els.hintLoading].forEach(e => e.classList.add('hidden'));
 
     if (mode === 'idle')    els.hintIdle.classList.remove('hidden');
-    if (mode === 'reading') els.hintBuzz.classList.remove('hidden');
+    if (mode === 'reading') {
+        els.hintBuzz.classList.remove('hidden');
+        els.hintSepSkip.classList.remove('hidden');
+        els.hintSkip.classList.remove('hidden');
+    }
     if (mode === 'next')    els.hintNext.classList.remove('hidden');
     if (mode === 'loading') els.hintLoading.classList.remove('hidden');
     if (mode === 'waiting') {
@@ -605,6 +622,7 @@ function handleMessage({ data }) {
         // Mirror the topic everywhere; clear local stream for the new round
         currentRoundTopic = msg.topic || null;
         els.topic.value = msg.topic || '';
+        updateStartLabel();
         state = 'loading';
         els.stream.innerHTML = '';
         els.streamEmpty.textContent = 'Curating topics…';
@@ -652,6 +670,7 @@ function handleMessage({ data }) {
         if (msg.topic) {
             currentRoundTopic = msg.topic;
             els.topic.value = msg.topic;
+            updateStartLabel();
         }
 
         // Replay completed question cards (oldest → bottom, newest → top)
@@ -1143,6 +1162,7 @@ function startGame() {
     } else {
         // New round — full reset
         currentRoundTopic = topic;
+        updateStartLabel();
         state = 'loading';
         els.stream.innerHTML = '';
         els.streamEmpty.textContent = 'Curating topics…';
@@ -1170,6 +1190,12 @@ function buzz() {
     if (state === 'reading') sendMessage({ type: 'buzz' });
 }
 
+function goSkip() {
+    if (state !== 'reading') return;
+    sendMessage({ type: 'skip' });
+    state = 'loading'; // prevent re-trigger while awaiting question_dead
+}
+
 function submitAnswer() {
     const guess = els.answer.value.trim();
     sendMessage({ type: 'submit_answer', guess });
@@ -1194,8 +1220,16 @@ function resetUI() {
 }
 
 // ── Wire-up ─────────────────────────────────────────────────────
+function updateStartLabel() {
+    const topic = els.topic.value.trim() || 'General Knowledge';
+    const same = currentRoundTopic && topic.toLowerCase() === currentRoundTopic.toLowerCase();
+    els.startBtn.textContent = same ? 'Next →' : 'Start round';
+}
+els.topic.addEventListener('input', updateStartLabel);
+
 els.startBtn.addEventListener('click', startGame);
 els.hintBuzz.addEventListener('click', buzz);
+els.hintSkip.addEventListener('click', goSkip);
 els.hintNext.addEventListener('click', goNext);
 els.resetBtn.addEventListener('click', () => sendMessage({ type: 'reset' }));
 els.topic.addEventListener('keydown',  e => { if (e.key === 'Enter') startGame(); });
@@ -1204,6 +1238,7 @@ els.answer.addEventListener('keydown', e => { if (e.key === 'Enter') submitAnswe
 window.addEventListener('keydown', e => {
     if (document.activeElement.tagName === 'INPUT') return;
     if (e.code === 'Space') { e.preventDefault(); buzz(); }
+    if (e.key.toLowerCase() === 's' && state === 'reading') goSkip();
     if (e.key.toLowerCase() === 'n' && state === 'revealed') goNext();
 });
 

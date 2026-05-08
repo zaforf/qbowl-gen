@@ -183,12 +183,10 @@ If no alternates exist, omit the brackets.
 - "Knuth–Morris–Pratt algorithm [or KMP]"
 
 ### Example
-TOPIC: Leo Tolstoy
 ANSWER: Leo Tolstoy [or Lev Nikolayevich Tolstoy; or Lev Tolstoy]
 CLUE: A 1901 excommunication by the Russian Orthodox Holy Synod followed this man's publication of a novel in which he satirized the church through the prostitute Maslova. In a novella by this author, Praskovya Fedorovna is tormented by the three-day scream of a dying judge. He created Konstantin Levin, who proposes to Kitty Shcherbatskaya by writing the first letters of words in chalk. He opened another novel by declaring that "all happy families are alike; each unhappy family is unhappy in its own way." For 10 points, name this Russian author of War and Peace and Anna Karenina.
 
 ### Output (no preamble)
-TOPIC: <name>
 ANSWER: <answer>[ optional bracket of alternates ]
 CLUE: <pyramidal tossup>
 """
@@ -231,7 +229,7 @@ CORRECT when the guess is unambiguously the same name, allowing for:
 - any capitalization or punctuation difference
 - obvious spelling/typographical errors of the full listed name ("rivest shamri adleman" = "Rivest-Shamir-Adleman"; "quin" = "Quine") — a typo of only part of the name does not count ("djikstra" ≠ "Dijkstra–Scholten algorithm")
 - initials abbreviation of the listed name ("KMP" = "Knuth-Morris-Pratt")
-- the single distinctive proper noun in ANSWER when all other words are generic ("Voynich" = "Voynich Manuscript"; "Tolstoy" = "Leo Tolstoy") — not when ANSWER has multiple proper nouns ("lamport" ≠ "Chandy-Lamport")
+- the single distinctive proper noun in ANSWER when all other words are generic labels, prefixes, or titles ("Voynich" = "Voynich Manuscript"; "Tolstoy" = "Leo Tolstoy"; "Titanic" = "RMS Titanic") — not when ANSWER has multiple proper nouns ("lamport" ≠ "Chandy-Lamport")
 - numeric or notation rewrite ("WWII" = "World War II", "p=np" = "P vs NP")
 
 INCORRECT whenever accepting requires knowing what the answer is about rather than just recognising the same name: broader categories, parent fields, related concepts, unlisted aliases, partial multi-person eponyms, single letters or vague fragments.
@@ -347,12 +345,11 @@ class Brain:
         text = _strip_thinking(response.choices[0].message.content or "")
         print(f"\n{'='*60}\n[WRITER-PICK – {used}] (avoid={len(avoid or [])})\n{text}\n{'='*60}\n")
         try:
-            topic = text.split("TOPIC:", 1)[1].split("ANSWER:", 1)[0].strip().split("\n")[0].strip()
             answer_line = text.split("ANSWER:", 1)[1].split("CLUE:", 1)[0].strip().split("\n")[0].strip()
             clue = text.split("CLUE:", 1)[1].strip()
             primary, aliases = _parse_answer_line(answer_line)
-            if topic and primary and clue:
-                return topic, primary, aliases, clue
+            if primary and clue:
+                return primary, primary, aliases, clue
         except (IndexError, AttributeError):
             pass
         return None, None, None, None
@@ -870,6 +867,11 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     # All wrong-answer paths funnel through force_wrong_answer
                     # (handles score, broadcast, transition to next phase).
                     await force_wrong_answer(client_id, guess)
+
+            elif mtype == "skip":
+                if game.phase in (PHASE_READING, PHASE_BUZZ_WINDOW):
+                    await game.stop_streaming()
+                    await declare_dead()
 
             elif mtype == "reset":
                 await game.stop_streaming()
