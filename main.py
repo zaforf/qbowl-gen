@@ -125,13 +125,14 @@ gemini_client = OpenAI(
 # ── Models ────────────────────────────────────────────────────────
 # Up to MAX_IN_FLIGHT writer tasks run concurrently. When the architect
 # topic queue is empty, writers pick their own topic (writer-pick path).
-# Model is chosen at dispatch time: fast Llama when ready+in_flight ≤ FAST_MODEL_THRESHOLD,
-# slow Gemini Flash Lite otherwise — saves Groq quota once buffer is comfortable.
-MODEL_ARCHITECT    = "gemini-3.1-flash-lite"      # Google; falls back to MODEL_FALLBACK on RPM limit
-MODEL_WRITER_FAST  = "llama-3.3-70b-versatile"   # Groq, ~few seconds
-MODEL_WRITER_SLOW  = "gemini-3.1-flash-lite"      # Google; falls back to MODEL_FALLBACK on RPM limit
-MODEL_FALLBACK     = "qwen/qwen3-32b"             # Groq, 60 RPM — Gemini rate-limit fallback
-MODEL_JUDGE        = "meta-llama/llama-4-scout-17b-16e-instruct"       # Groq, sub-second validation
+# Fast writer uses Scout (594 t/s on Groq) to bootstrap an empty queue quickly.
+# Slow writer uses Gemini Flash Lite for steady-state quality generation.
+# Fallback chain: Scout → 70B (Groq) when Scout quota hit; Gemini → 70B when Gemini RPM'd.
+MODEL_ARCHITECT    = "gemini-3.1-flash-lite"                          # Google; separate provider quota
+MODEL_WRITER_FAST  = "meta-llama/llama-4-scout-17b-16e-instruct"      # Groq, 594 t/s
+MODEL_WRITER_SLOW  = "gemini-3.1-flash-lite"                          # Google; quality steady-state
+MODEL_FALLBACK     = "llama-3.3-70b-versatile"                        # Groq; rate-limit fallback for both
+MODEL_JUDGE        = "meta-llama/llama-4-scout-17b-16e-instruct"      # Groq, sub-second validation
 
 # ── Room password (WebSocket) ─────────────────────────────────────
 # If set, clients must pass the same value as query param: /ws/{id}?token=...
@@ -173,7 +174,7 @@ If a "DO NOT pick" list is given, avoid those names and their aliases.
 - Concrete, factual clues only — specific names, dates, places, terms.
 - End with: "For 10 points, name this <category> <giveaway description>."
 - Never mention the answer, any alias, abbreviation, or translation in the clue.
-- For eponymous answers, reserve the creator's name for later sentences — opening
+- For eponymous answers, reserve the a giveaway for later sentences — opening
   with it makes the first clue trivially buzzable.
 
 ### Answer line
@@ -255,9 +256,9 @@ class Brain:
         Returns (response, model_actually_used).
 
         Fallback chain:
-          MODEL_WRITER_FAST  → MODEL_WRITER_SLOW  (Llama quota → Gemini)
-          MODEL_WRITER_SLOW  → MODEL_FALLBACK      (Gemini RPM → Qwen 32B on Groq)
-          MODEL_ARCHITECT    → MODEL_FALLBACK      (Gemini RPM → Qwen 32B on Groq)
+          MODEL_WRITER_FAST  → MODEL_FALLBACK   (Scout quota → 70B on Groq)
+          MODEL_WRITER_SLOW  → MODEL_FALLBACK   (Gemini RPM → 70B on Groq)
+          MODEL_ARCHITECT    → MODEL_FALLBACK   (Gemini RPM → 70B on Groq)
 
         Groq does not support reasoning_effort — strip it when falling back
         from a Gemini model.
@@ -277,10 +278,10 @@ class Brain:
                 raise
 
             if model == MODEL_WRITER_FAST:
-                fb = MODEL_WRITER_SLOW
+                fb = MODEL_FALLBACK          # Scout → 70B (both Groq, no stripping)
                 fb_kwargs = kwargs
             elif model in (MODEL_WRITER_SLOW, MODEL_ARCHITECT):
-                fb = MODEL_FALLBACK
+                fb = MODEL_FALLBACK          # Gemini → 70B (strip Groq-unsupported)
                 fb_kwargs = {k: v for k, v in kwargs.items() if k not in _GROQ_UNSUPPORTED}
             else:
                 raise
@@ -316,7 +317,7 @@ class Brain:
             reasoning_effort="medium",
         )
         text = _strip_thinking(response.choices[0].message.content or "")
-        print(f"\n{'='*60}\n[ARCHITECT – {used}] (n={n}, avoid={len(avoid or [])})\n{response.choices[0].message.content or ''}\n{'='*60}\n")
+        print(f"\n{'='*60}\n[ARCHITECT – {used}] (n={n}, avoid={len(avoid or [])})\n{text}\n{'='*60}\n")
         topics = []
         for part in text.split("TOPIC:")[1:]:
             lines = part.split("\n")
