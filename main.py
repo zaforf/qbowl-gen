@@ -229,7 +229,8 @@ class Brain:
             reasoning_effort="medium",
         )
         text = _strip_thinking(response.choices[0].message.content or "")
-        print(f"\n{'='*60}\n[ARCHITECT – {MODEL_ARCHITECT}] (n={n}, avoid={len(avoid or [])})\n{response.choices[0].message.content or ""}\n{'='*60}\n")
+        raw_arch = response.choices[0].message.content or ""
+        print(f"\n{'='*60}\n[ARCHITECT – {MODEL_ARCHITECT}] (n={n}, avoid={len(avoid or [])})\n{raw_arch}\n{'='*60}\n")
         topics = []
         for part in text.split("TOPIC:")[1:]:
             lines = part.split("\n")

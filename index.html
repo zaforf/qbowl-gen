@@ -467,7 +467,7 @@
 // If the page is served from your GitHub Pages URL, talk to the VPS API; otherwise same-origin (local dev).
 const PAGES_ORIGIN = "https://zaforf.github.io";
 const PAGES_PATH_PREFIX = "/qbowl-gen";
-const REMOTE_API_ORIGIN = "https://qbowl-gen-api.duckdns.org";
+const REMOTE_API_ORIGIN = "https://qbowl-gen.duckdns.org";
 
 function resolveApiBase() {
     if (location.origin === PAGES_ORIGIN && location.pathname.startsWith(PAGES_PATH_PREFIX)) {
