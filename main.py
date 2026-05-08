@@ -16,8 +16,6 @@ def _strip_thinking(text: str) -> str:
                   text, flags=re.DOTALL | re.IGNORECASE).strip()
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
-from google import genai
-from google.genai import types
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -56,6 +54,11 @@ MODEL_ARCHITECT   = "gemini-3.1-flash-lite"      # Google, non-thinking (Gemma 4
 MODEL_WRITER_FAST = "llama-3.3-70b-versatile"    # Groq, ~few seconds
 MODEL_WRITER_SLOW = "gemini-3.1-flash-lite"      # Google, slower / lighter on Groq quota
 MODEL_JUDGE       = "llama-3.1-8b-instant"       # Groq, sub-second validation
+
+# ── Room password (WebSocket) ─────────────────────────────────────
+# If set, clients must pass the same value as query param: /ws/{id}?token=...
+# Leave empty for local dev with no gate.
+API_SHARED_TOKEN = os.environ.get("API_SHARED_TOKEN", "").strip()
 
 SYSTEM_PROMPT_ARCHITECT = """
 Pick N Quizbowl topics in the subject. For each, list around 2 facts — ideally
@@ -489,6 +492,16 @@ game = GameState()
 brain = Brain()
 app = FastAPI()
 
+if not API_SHARED_TOKEN:
+    print("[security] API_SHARED_TOKEN is empty; WebSocket password gate is disabled")
+
+
+def _is_token_valid(token: str) -> bool:
+    # Empty server token means "auth disabled" for local development.
+    if not API_SHARED_TOKEN:
+        return True
+    return bool(token) and token == API_SHARED_TOKEN
+
 
 # ── Server-authoritative gameplay helpers ─────────────────────────
 async def start_buzz_window():
@@ -582,8 +595,15 @@ async def get():
     with open("index.html", "r") as f:
         return HTMLResponse(content=f.read())
 
+
 @app.websocket("/ws/{client_id}")
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
+    token = websocket.query_params.get("token", "")
+    if not _is_token_valid(token):
+        # Policy violation
+        await websocket.close(code=1008)
+        return
+
     await game.connect(websocket, client_id)
     if client_id not in game.scores:
         game.scores[client_id] = 0

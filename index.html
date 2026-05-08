@@ -464,6 +464,19 @@
 <script>
 "use strict";
 
+// If the page is served from your GitHub Pages URL, talk to the VPS API; otherwise same-origin (local dev).
+const PAGES_ORIGIN = "https://zaforf.github.io";
+const PAGES_PATH_PREFIX = "/qbowl-gen";
+const REMOTE_API_ORIGIN = "https://qbowl-gen-api.duckdns.org";
+
+function resolveApiBase() {
+    if (location.origin === PAGES_ORIGIN && location.pathname.startsWith(PAGES_PATH_PREFIX)) {
+        return REMOTE_API_ORIGIN;
+    }
+    return `${location.protocol}//${location.host}`;
+}
+const API_BASE_URL = resolveApiBase();
+
 // ── State ────────────────────────────────────────────────────────
 // Mirror server phase. Source of truth = server messages.
 let state = 'idle';            // idle | loading | reading | locked | revealed
@@ -532,13 +545,31 @@ function action(mode, opts = {}) {
 }
 
 // ── WebSocket ────────────────────────────────────────────────────
-const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-const ws = new WebSocket(`${proto}//${location.host}/ws/${clientId}`);
+function buildWsUrl(baseHttpUrl, cid, token) {
+    const base = new URL(baseHttpUrl);
+    const proto = base.protocol === "https:" ? "wss:" : "ws:";
+    const url = new URL(`${proto}//${base.host}/ws/${encodeURIComponent(cid)}`);
+    if (token) url.searchParams.set("token", token);
+    return url.toString();
+}
+/** @returns {string|null} password, "" if none, null if user cancelled */
+function promptForAccessToken() {
+    const typed = window.prompt(
+        "Room password (leave blank only if the server has no password). Cancel to disconnect."
+    );
+    if (typed === null) return null;
+    return typed.trim();
+}
 
-ws.onopen  = () => { els.connDot.classList.add('live'); };
-ws.onclose = () => { els.connDot.classList.remove('live'); };
+function sendMessage(payload) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) return;
+    ws.send(JSON.stringify(payload));
+}
 
-ws.onmessage = ({ data }) => {
+let ws = null;
+let socketOpened = false;
+
+function handleMessage({ data }) {
     const msg = JSON.parse(data);
 
     switch (msg.type) {
@@ -727,7 +758,33 @@ ws.onmessage = ({ data }) => {
         }
         break;
     }
-};
+}
+
+function connectSocket() {
+    const token = promptForAccessToken();
+    if (token === null) {
+        els.stream.innerHTML = '';
+        els.streamEmpty.textContent = 'You cancelled. Refresh the page to connect.';
+        els.stream.appendChild(els.streamEmpty);
+        action('idle');
+        return;
+    }
+
+    socketOpened = false;
+    ws = new WebSocket(buildWsUrl(API_BASE_URL, clientId, token));
+    ws.onopen = () => {
+        socketOpened = true;
+        els.connDot.classList.add('live');
+    };
+    ws.onclose = (evt) => {
+        els.connDot.classList.remove('live');
+        if (!socketOpened && evt.code === 1008) {
+            alert('Wrong password. Please try again.');
+            connectSocket();
+        }
+    };
+    ws.onmessage = handleMessage;
+}
 
 // ── Question cards ───────────────────────────────────────────────
 function startNewQuestion(qnum) {
@@ -883,7 +940,7 @@ function esc(s) {
 // ── Game actions ────────────────────────────────────────────────
 function startGame() {
     const topic = els.topic.value.trim() || 'General Knowledge';
-    ws.send(JSON.stringify({ type: 'start', topic }));
+    sendMessage({ type: 'start', topic });
     state = 'loading';
     els.stream.innerHTML = '';
     els.streamEmpty.textContent = 'Curating topics…';
@@ -897,7 +954,7 @@ function startGame() {
 }
 
 function goNext() {
-    ws.send(JSON.stringify({ type: 'next' }));
+    sendMessage({ type: 'next' });
     state = 'loading';
     if (currentCard) currentCard.classList.add('collapsed');
     currentCard = null;
@@ -907,12 +964,12 @@ function goNext() {
 }
 
 function buzz() {
-    if (state === 'reading') ws.send(JSON.stringify({ type: 'buzz' }));
+    if (state === 'reading') sendMessage({ type: 'buzz' });
 }
 
 function submitAnswer() {
     const guess = els.answer.value.trim();
-    ws.send(JSON.stringify({ type: 'submit_answer', guess }));
+    sendMessage({ type: 'submit_answer', guess });
     els.answer.value = '';
 }
 
@@ -937,7 +994,7 @@ function resetUI() {
 els.startBtn.addEventListener('click', startGame);
 els.hintBuzz.addEventListener('click', buzz);
 els.hintNext.addEventListener('click', goNext);
-els.resetBtn.addEventListener('click', () => ws.send(JSON.stringify({ type: 'reset' })));
+els.resetBtn.addEventListener('click', () => sendMessage({ type: 'reset' }));
 els.topic.addEventListener('keydown',  e => { if (e.key === 'Enter') startGame(); });
 els.answer.addEventListener('keydown', e => { if (e.key === 'Enter') submitAnswer(); });
 
@@ -967,7 +1024,7 @@ function commitRename() {
     els.meEdit.classList.add('hidden');
     els.me.classList.remove('hidden');
     if (v && v !== clientId) {
-        ws.send(JSON.stringify({ type: 'rename', name: v }));
+        sendMessage({ type: 'rename', name: v });
     }
 }
 function cancelRename() {
@@ -984,6 +1041,7 @@ els.meEdit.addEventListener('keydown', e => {
 players.set(clientId, { score: 0 });
 renderPlayers();
 action('idle');
+connectSocket();
 </script>
 </body>
 </html>
