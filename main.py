@@ -439,7 +439,7 @@ class Brain:
         return is_correct, feedback
 
 # ── Gameplay constants (server-authoritative) ───────────────────────
-BUZZ_WINDOW_MS = 10000   # post-reading buzz window
+BUZZ_WINDOW_MS = 5000   # post-reading buzz window
 ANSWER_WINDOW_MS = 10000 # time the buzzer has to answer
 WORD_PACE_S = 0.20
 
@@ -732,7 +732,8 @@ async def get():
 async def websocket_endpoint(websocket: WebSocket, client_id: str):
     token = websocket.query_params.get("token", "")
     if not _is_token_valid(token):
-        # Policy violation
+        await websocket.accept()
+        await websocket.send_json({"type": "auth_failed"})
         await websocket.close(code=1008)
         return
 

@@ -176,6 +176,7 @@
             border-color: var(--accent);
         }
         .btn-primary:hover { background: #000; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
 
         /* Stream — vertical list of question cards.
            Active card sits at the top; past cards collapse beneath. */
@@ -581,6 +582,14 @@ function handleMessage({ data }) {
 
     switch (msg.type) {
 
+    case 'auth_failed':
+        els.stream.innerHTML = '';
+        els.streamEmpty.textContent = 'Wrong password. Zafir will tell you just ask 👽';
+        els.stream.appendChild(els.streamEmpty);
+        els.startBtn.disabled = true;
+        action('idle');
+        return;
+
     case 'round_started':
         // Mirror the topic everywhere; clear local stream for the new round
         els.topic.value = msg.topic || '';
@@ -783,12 +792,8 @@ function connectSocket() {
         socketOpened = true;
         els.connDot.classList.add('live');
     };
-    ws.onclose = (evt) => {
+    ws.onclose = () => {
         els.connDot.classList.remove('live');
-        if (!socketOpened && evt.code === 1008) {
-            alert('Wrong password. Please try again.');
-            connectSocket();
-        }
     };
     ws.onmessage = handleMessage;
 }
