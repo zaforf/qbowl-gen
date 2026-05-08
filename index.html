@@ -240,6 +240,16 @@
             color: var(--ink);
             font-weight: 600;
         }
+        .answer-link {
+            color: inherit;
+            text-decoration: none;
+        }
+        .answer-link:hover { text-decoration: underline; }
+        .answer-link:focus-visible {
+            outline: 2px solid var(--ink-3);
+            outline-offset: 2px;
+            border-radius: 3px;
+        }
         .qresult .meta {
             margin-left: auto;
             color: var(--ink-2);
@@ -714,16 +724,21 @@ function handleMessage({ data }) {
         isBuzzer = false;
         hideTimer();
         const fullAnswer = formatAnswer(msg.answer, msg.answer_aliases);
+        const answerHref = wikipediaSearchHref(msg.answer);
         if (currentCard) {
             setCardState(currentCard, 'revealed', 'revealed');
             renderReadUnread(msg.full_clue);
             attachResult(currentCard, fullAnswer,
-                `<span class="who">${esc(msg.winner)}</span> · “${esc(msg.guess)}”`);
-            setSummary(currentCard, fullAnswer, `${msg.winner} ✓`);
+                `<span class="who">${esc(msg.winner)}</span> · “${esc(msg.guess)}”`,
+                answerHref);
+            setSummary(currentCard, fullAnswer, `${msg.winner} ✓`, answerHref);
         }
         action('next');
+        const answerEvent = answerHref
+            ? `<a class="answer-link" href="${esc(answerHref)}" target="_blank" rel="noopener noreferrer">${renderInline(msg.answer)}</a>`
+            : renderInline(msg.answer);
         addEvent('correct',
-            `<span class="who">${esc(msg.winner)}</span> · ${renderInline(msg.answer)}`);
+            `<span class="who">${esc(msg.winner)}</span> · ${answerEvent}`);
         if (msg.scores) ingestScores(msg.scores);
         break;
     }
@@ -732,14 +747,18 @@ function handleMessage({ data }) {
         state = 'revealed';
         hideTimer();
         const fullAnswer = formatAnswer(msg.answer, msg.answer_aliases);
+        const answerHref = wikipediaSearchHref(msg.answer);
         if (currentCard) {
             setCardState(currentCard, 'dead', 'dead');
             if (msg.full_clue) renderReadUnread(msg.full_clue);
-            attachResult(currentCard, fullAnswer, 'no correct buzz');
-            setSummary(currentCard, fullAnswer, 'dead');
+            attachResult(currentCard, fullAnswer, 'no correct buzz', answerHref);
+            setSummary(currentCard, fullAnswer, 'dead', answerHref);
         }
         action('next');
-        addEvent('dead', `dead · ${renderInline(msg.answer)}`);
+        const answerEvent = answerHref
+            ? `<a class="answer-link" href="${esc(answerHref)}" target="_blank" rel="noopener noreferrer">${renderInline(msg.answer)}</a>`
+            : renderInline(msg.answer);
+        addEvent('dead', `dead · ${answerEvent}`);
         break;
     }
 
@@ -851,7 +870,22 @@ function formatAnswer(answer, aliases) {
     return answer + ' (or ' + aliases.join('; or ') + ')';
 }
 
-function attachResult(card, answer, metaHTML) {
+function wikipediaSearchHref(answer) {
+    const term = String(answer ?? '').trim();
+    if (!term) return null;
+    return 'https://en.wikipedia.org/wiki/Special:Search?search=' + encodeURIComponent(term);
+}
+
+function _wireAnswerLinks(root) {
+    root.querySelectorAll('a.answer-link').forEach(a => {
+        if (a.dataset.wired) return;
+        a.dataset.wired = '1';
+        // Prevent card collapse-toggle when opening a link.
+        a.addEventListener('click', (e) => e.stopPropagation());
+    });
+}
+
+function attachResult(card, answer, metaHTML, answerHref = null) {
     let res = card.querySelector('.qresult');
     if (!res) {
         res = document.createElement('div');
@@ -860,14 +894,22 @@ function attachResult(card, answer, metaHTML) {
         const sum = card.querySelector('.qsummary');
         if (sum) card.insertBefore(res, sum); else card.appendChild(res);
     }
-    res.innerHTML = `<span>Answer</span><span class="answer">${renderInline(answer)}</span><span class="meta">${metaHTML}</span>`;
+    const answerHTML = answerHref
+        ? `<a class="answer answer-link" href="${esc(answerHref)}" target="_blank" rel="noopener noreferrer">${renderInline(answer)}</a>`
+        : `<span class="answer">${renderInline(answer)}</span>`;
+    res.innerHTML = `<span>Answer</span>${answerHTML}<span class="meta">${metaHTML}</span>`;
+    _wireAnswerLinks(res);
     applyKatex(res);
 }
 
-function setSummary(card, answer, metaText) {
+function setSummary(card, answer, metaText, answerHref = null) {
     const sum = card.querySelector('.qsummary');
     if (!sum) return;
-    sum.innerHTML = `<span class="qnum">Q${currentQNum}</span><span class="answer">${renderInline(answer)}</span><span class="meta">${esc(metaText)}</span>`;
+    const answerHTML = answerHref
+        ? `<a class="answer answer-link" href="${esc(answerHref)}" target="_blank" rel="noopener noreferrer">${renderInline(answer)}</a>`
+        : `<span class="answer">${renderInline(answer)}</span>`;
+    sum.innerHTML = `<span class="qnum">Q${currentQNum}</span>${answerHTML}<span class="meta">${esc(metaText)}</span>`;
+    _wireAnswerLinks(sum);
     applyKatex(sum);
 }
 
