@@ -555,7 +555,7 @@ function buildWsUrl(baseHttpUrl, cid, token) {
 /** @returns {string|null} password, "" if none, null if user cancelled */
 function promptForAccessToken() {
     const typed = window.prompt(
-        "Room password (leave blank only if the server has no password). Cancel to disconnect."
+        "Password (ask Zafir)"
     );
     if (typed === null) return null;
     return typed.trim();
