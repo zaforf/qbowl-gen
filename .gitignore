@@ -6,3 +6,4 @@ __pycache__/
 venv/
 ENV/
 .pytest_cache/
+used_topics.json
