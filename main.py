@@ -14,6 +14,73 @@ def _strip_thinking(text: str) -> str:
         return ""
     return re.sub(r'<(think|thinking|thought)\b[^>]*>.*?</\1>', '',
                   text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+
+# ── Lightweight answer-similarity prefilter ───────────────────────
+# Words that don't disambiguate a quizbowl answer. After stripping these
+# (plus articles/connectives), "P vs NP problem" and "P = NP" both
+# reduce to {p, np} and we can accept without an LLM call.
+_NOISE_WORDS = {
+    # articles / connectives
+    "the", "a", "an", "of", "in", "on", "and", "or", "to", "for",
+    "vs", "versus", "is", "as",
+    # quizbowl category labels — eponym is the answer, this is decoration
+    "problem", "law", "theorem", "principle", "algorithm", "equation",
+    "conjecture", "hypothesis", "function", "technique", "method",
+    "effect", "model", "process",
+}
+
+
+def _normalize_tokens(s: str) -> set:
+    """Lowercase → tokens, with operator chars (=, +, −, /) treated as
+    whitespace and noise/category words dropped. Returns a set."""
+    if not s:
+        return set()
+    s = re.sub(r"[=+\-/&]", " ", s.lower())
+    s = re.sub(r"[^\w\s]", " ", s)        # strip remaining punctuation
+    return {t for t in s.split() if t and t not in _NOISE_WORDS}
+
+
+def _quick_match(answer: str, guess: str) -> bool:
+    """Conservative pre-judge: accepts when the guess clearly names the same
+    thing as the answer. Two checks in order:
+    1. Case-insensitive exact string match (catches pure capitalization diff).
+    2. Normalized token-set equality (catches "P=NP" / "P vs NP problem",
+       "Lenz" / "Lenz's law"). Anything fuzzier falls through to the LLM."""
+    if answer.strip().lower() == guess.strip().lower():
+        return True
+    a, g = _normalize_tokens(answer), _normalize_tokens(guess)
+    if not a or not g:
+        return False
+    return a == g
+
+
+def _parse_answer_line(line: str):
+    """Parse 'Primary [or alt1; or alt2]' → ('Primary', ['alt1', 'alt2']).
+
+    Quizbowl convention puts accepted alternates in square brackets,
+    separated by '; or' / 'or' / 'accept'. Plain answers without brackets
+    return an empty alias list."""
+    if not line:
+        return "", []
+    line = line.strip()
+    m = re.match(r"^([^\[\]]+?)(?:\s*\[(.+?)\])?\s*$", line)
+    if not m:
+        return line, []
+    primary = m.group(1).strip().strip(".,;")
+    bracket = (m.group(2) or "").strip()
+    if not bracket:
+        return primary, []
+    aliases = []
+    for part in re.split(r"[;,]", bracket):
+        part = part.strip()
+        part = re.sub(r"^(or|accept|also accept|prompt on|prompt)\s+",
+                      "", part, flags=re.IGNORECASE).strip()
+        part = part.strip(".,;\"' ")
+        if part and part.lower() != primary.lower():
+            aliases.append(part)
+    return primary, aliases
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse
 from openai import OpenAI
@@ -88,7 +155,9 @@ NAMED topic and write a complete pyramidal tossup. Used when speed matters.
 
 ### Selection
 Specific named entities only (works, people, named laws/theorems, specific
-concepts). If a "DO NOT pick" list is given, avoid those exactly.
+concepts). If a "DO NOT pick" list is given, avoid those exactly AND avoid
+anything that would be an alias of those (e.g. "Lev Tolstoy" if "Leo Tolstoy"
+is on the list).
 
 ### Tossup Style (HS / NAQT level)
 - 3-4 sentences, ~80-130 words.
@@ -99,14 +168,22 @@ concepts). If a "DO NOT pick" list is given, avoid those exactly.
 - Never include the answer, alias, abbreviation, eponym, synonym, or translation
   (e.g. "printf debugging" leaks "print debugging"). No "also known as".
 
+### Answer line
+List every common alternate name in square brackets, separated by "; or".
+This is what the moderator will accept as a correct buzz. Examples:
+- "Mark Twain [or Samuel Clemens; or Samuel Langhorne Clemens]"
+- "Aliens trick [or WQS binary search; or Lagrange optimization on convex DP]"
+- "Knuth–Morris–Pratt algorithm [or KMP]"
+If there are genuinely no alternates, just write the name with no brackets.
+
 ### Example
 TOPIC: Leo Tolstoy
-ANSWER: Leo Tolstoy
+ANSWER: Leo Tolstoy [or Lev Nikolayevich Tolstoy; or Lev Tolstoy]
 CLUE: A 1901 excommunication by the Russian Orthodox Holy Synod followed this man's publication of a novel in which he satirized the church through the prostitute Maslova. In a novella by this author, Praskovya Fedorovna is tormented by the three-day scream of a dying judge. He created Konstantin Levin, who proposes to Kitty Shcherbatskaya by writing the first letters of words in chalk. He opened another novel by declaring that "all happy families are alike; each unhappy family is unhappy in its own way." For 10 points, name this Russian author of War and Peace and Anna Karenina.
 
 ### Output (no preamble)
 TOPIC: <name>
-ANSWER: <answer>
+ANSWER: <answer>[ optional bracket of alternates ]
 CLUE: <pyramidal tossup>
 """
 
@@ -125,6 +202,17 @@ the giveaway.
   (e.g. "printf debugging" leaks "print debugging"). No "also known as".
   If an input fact would leak, paraphrase it.
 
+### Answer line
+List every common alternate name in square brackets, separated by "; or".
+This is what the moderator will accept as a correct buzz. Examples:
+- "Mark Twain [or Samuel Clemens; or Samuel Langhorne Clemens]"
+- "Aliens trick [or WQS binary search; or Lagrange optimization on convex DP]"
+- "Knuth–Morris–Pratt algorithm [or KMP]"
+If there are genuinely no alternates, just write the name with no brackets.
+If a "DO NOT pick" list is given and the TOPIC turns out to alias one of those
+names, output exactly: ANSWER: SKIP (and no clue). Otherwise list alternates;
+plain answers without alternates need no brackets.
+
 ### Example
 INPUT:
 TOPIC: Leo Tolstoy
@@ -136,33 +224,34 @@ FACTS:
 - Russian author of War and Peace and Anna Karenina
 
 OUTPUT:
-ANSWER: Leo Tolstoy
+ANSWER: Leo Tolstoy [or Lev Nikolayevich Tolstoy; or Lev Tolstoy]
 CLUE: A 1901 excommunication by the Russian Orthodox Holy Synod followed this man's publication of a novel in which he satirized the church through the prostitute Maslova. In a novella by this author, Praskovya Fedorovna is tormented by the three-day scream of a dying judge. He created Konstantin Levin, who proposes to Kitty Shcherbatskaya by writing the first letters of words in chalk. He opened another novel by declaring that "all happy families are alike; each unhappy family is unhappy in its own way." For 10 points, name this Russian author of War and Peace and Anna Karenina.
 
 ### Output (no preamble)
-ANSWER: <answer>
+ANSWER: <answer>[ optional bracket of alternates ]
 CLUE: <tossup>
 """
 
 SYSTEM_PROMPT_JUDGE = """
-You are a strict Quizbowl moderator. Decide whether USER_GUESS refers to the
-SAME SPECIFIC ANSWER as ANSWER. Apply quizbowl-grade rigor.
+Quizbowl judge. Does USER_GUESS name the same specific thing as ANSWER?
+ANSWER may list accepted alternates after "| accept:" — match any of them.
 
-### Rules
-1. Accept alternate names, last-name-only for people, abbreviations, alternate
-   spellings, translations of titles, canonical shortenings.
-   ("KMP" ↔ "Knuth-Morris-Pratt"; "Samuel Clemens" ↔ "Mark Twain").
-2. Reject if the guess names a BROADER category or parent field
-   ("sorting algorithm" for "quicksort"; "electromagnetic induction" for "Lenz's law").
-3. Reject if the guess names a DIFFERENT specific entity in the same field
-   ("Faraday's law" for "Lenz's law"; "merge sort" for "quicksort").
-4. Reject sub-events / over-narrow guesses
-   ("Battle of Midway" for "World War II").
-5. When unsure, INCORRECT.
+CORRECT if the guess differs only by:
+- capitalization or punctuation  ("palindrome" = "Palindrome", "twicetagram" = "Twicetagram")
+- notation/reformulation  ("p=np" = "P vs NP problem", "WWII" = "World War II")
+- last name only  ("Tolstoy" = "Leo Tolstoy")
+- common abbreviation or alias  ("KMP" = "Knuth-Morris-Pratt", "Samuel Clemens" = "Mark Twain")
+- roman numeral / numeric variant  ("World War 2" = "World War II")
 
-Output exactly two lines:
+INCORRECT if the guess is:
+- a different specific thing in the same field  ("merge sort" ≠ "quicksort", "Faraday's law" ≠ "Lenz's law")
+- a broader category or parent concept  ("sorting" ≠ "quicksort")
+- a sibling concept or related tool that is not the answer
+- obviously a guess that is not related, a long shot or BS answer
+
+Default INCORRECT when unsure. Output exactly:
 RESULT: CORRECT or INCORRECT
-FEEDBACK: One short sentence. If INCORRECT, do NOT reveal the correct answer.
+FEEDBACK: One sentence.
 """
 
 class Brain:
@@ -243,7 +332,7 @@ class Brain:
     async def generate_topic_and_clue(self, general_topic: str, avoid: Optional[List[str]] = None,
                                        model: str = MODEL_WRITER_FAST):
         """Combined writer: pick topic + write tossup in one call. For bootstrap.
-        Returns (topic_name, answer, clue) or (None, None, None) on parse failure."""
+        Returns (topic_name, primary_answer, aliases, clue) or (None, None, None, None)."""
         user_msg = (
             f"Subject: {general_topic}. Pick one specific topic and write a tossup."
             f"{self._avoid_block(avoid)}"
@@ -260,18 +349,26 @@ class Brain:
         print(f"\n{'='*60}\n[WRITER-PICK – {used}] (avoid={len(avoid or [])})\n{text}\n{'='*60}\n")
         try:
             topic = text.split("TOPIC:", 1)[1].split("ANSWER:", 1)[0].strip().split("\n")[0].strip()
-            answer = text.split("ANSWER:", 1)[1].split("CLUE:", 1)[0].strip().split("\n")[0].strip()
+            answer_line = text.split("ANSWER:", 1)[1].split("CLUE:", 1)[0].strip().split("\n")[0].strip()
             clue = text.split("CLUE:", 1)[1].strip()
-            if topic and answer and clue:
-                return topic, answer, clue
+            primary, aliases = _parse_answer_line(answer_line)
+            if topic and primary and clue:
+                return topic, primary, aliases, clue
         except (IndexError, AttributeError):
             pass
-        return None, None, None
+        return None, None, None, None
 
-    async def generate_clue_from_facts(self, topic_data: dict, model: str = MODEL_WRITER_SLOW):
+    async def generate_clue_from_facts(self, topic_data: dict,
+                                        avoid: Optional[List[str]] = None,
+                                        model: str = MODEL_WRITER_SLOW):
         """Steady-state writer: turn architect's topic+facts into a tossup.
-        Returns (answer, clue) or (None, None)."""
-        user_msg = f"TOPIC: {topic_data['name']}\nFACTS:\n{topic_data['facts']}"
+        Receives the avoid list too so it can flag aliasing collisions
+        (output 'ANSWER: SKIP' if the topic aliases something already used).
+        Returns (primary_answer, aliases, clue) or (None, None, None)."""
+        user_msg = (
+            f"TOPIC: {topic_data['name']}\nFACTS:\n{topic_data['facts']}"
+            f"{self._avoid_block(avoid)}"
+        )
         response, used = await self._chat(
             model,
             messages=[
@@ -283,26 +380,46 @@ class Brain:
         text = _strip_thinking(response.choices[0].message.content or "")
         print(f"\n{'='*60}\n[WRITER – {used}] topic='{topic_data.get('name')}'\n{text}\n{'='*60}\n")
         try:
-            answer = text.split("ANSWER:", 1)[1].split("CLUE:", 1)[0].strip().split("\n")[0].strip()
+            answer_line = text.split("ANSWER:", 1)[1].split("CLUE:", 1)[0].strip().split("\n")[0].strip()
+            # Writer signals "this topic aliases something on the avoid list"
+            if answer_line.upper().startswith("SKIP"):
+                print(f"[writer] SKIP requested for '{topic_data.get('name')}' (alias collision)")
+                return None, None, None
             clue = text.split("CLUE:", 1)[1].strip()
-            if answer and clue:
-                return answer, clue
+            primary, aliases = _parse_answer_line(answer_line)
+            if primary and clue:
+                return primary, aliases, clue
         except (IndexError, AttributeError):
             pass
-        return None, None
+        return None, None, None
 
-    async def validate_answer(self, answer: str, guess: str, clue: str):
+    async def validate_answer(self, answer: str, aliases: List[str], guess: str, clue: str):
+        # Stage 1: cheap token-set prefilter against primary AND every alias.
+        # Catches "P = NP" / "P vs NP problem", "Lenz" / "Lenz's law", and
+        # any writer-supplied alternate that normalizes the same.
+        candidates = [answer] + list(aliases or [])
+        for cand in candidates:
+            if _quick_match(cand, guess):
+                print(f"[JUDGE – prefilter] ACCEPT '{guess}' ≈ '{cand}' (token-equal)")
+                return True, "Correct."
+
+        # Stage 2: strict LLM judge — sees every accepted alias so it
+        # doesn't have to guess. Format: "Primary | accept: alt1; alt2".
+        if aliases:
+            answer_block = f"{answer} | accept: " + "; ".join(aliases)
+        else:
+            answer_block = answer
         response = await asyncio.to_thread(
             self.groq.chat.completions.create,
             model=MODEL_JUDGE,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT_JUDGE},
-                {"role": "user", "content": f"ANSWER: {answer} | USER_GUESS: {guess} | CLUE: {clue}"},
+                {"role": "user", "content": f"ANSWER: {answer_block} | USER_GUESS: {guess} | CLUE: {clue}"},
             ],
             temperature=0,
         )
         text = _strip_thinking(response.choices[0].message.content or "")
-        print(f"\n{'='*60}\n[JUDGE – {MODEL_JUDGE}]\nANSWER: {answer} | GUESS: {guess}\n{text}\n{'='*60}\n")
+        print(f"\n{'='*60}\n[JUDGE – {MODEL_JUDGE}]\nANSWER: {answer_block} | GUESS: {guess}\n{text}\n{'='*60}\n")
         try:
             result = text.split("RESULT:")[1].split("FEEDBACK:")[0].strip()
             feedback = text.split("FEEDBACK:")[1].strip()
@@ -367,7 +484,8 @@ class GameState:
         # Phase + answer state
         self.phase: str = PHASE_IDLE
         self.winner: Optional[str] = None
-        self.current_answer: Optional[str] = None
+        self.current_answer: Optional[str] = None       # primary, displayed
+        self.current_answer_aliases: List[str] = []     # accepted alternates
         self.current_clue: Optional[str] = None
 
         # Background tasks
@@ -588,6 +706,7 @@ async def declare_dead():
     await game.broadcast({
         "type": "question_dead",
         "answer": game.current_answer,
+        "answer_aliases": game.current_answer_aliases,
         "full_clue": game.current_clue,
     })
 
@@ -682,7 +801,8 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     is_correct, feedback = False, "No answer given."
                 else:
                     is_correct, feedback = await brain.validate_answer(
-                        game.current_answer, guess, game.current_clue
+                        game.current_answer, game.current_answer_aliases,
+                        guess, game.current_clue,
                     )
 
                 if is_correct:
@@ -694,6 +814,7 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                         "type": "reveal",
                         "correct": True,
                         "answer": game.current_answer,
+                        "answer_aliases": game.current_answer_aliases,
                         "feedback": feedback,
                         "winner": client_id,
                         "guess": guess,
@@ -819,19 +940,25 @@ async def background_generator(topic: str):
                     bootstrap_done = True
                     continue
                 try:
-                    name, answer, clue = await brain.generate_topic_and_clue(
+                    name, answer, aliases, clue = await brain.generate_topic_and_clue(
                         topic, avoid=_avoid_list(), model=MODEL_WRITER_FAST,
                     )
                 except Exception as e:
                     print(f"[bootstrap] {e}")
                     await asyncio.sleep(2)
                     continue
-                if name and answer and clue and name not in game.session_used_topics:
-                    game.pregenerated_clues.put_nowait((name, answer, clue))
+                # Dedup against session topics by primary AND any alias
+                # (catches "Lev Tolstoy" coming back when "Leo Tolstoy" used)
+                duplicate = name in game.session_used_topics or any(
+                    a in game.session_used_topics for a in (aliases or [])
+                )
+                if name and answer and clue and not duplicate:
+                    game.pregenerated_clues.put_nowait((name, answer, aliases, clue))
                     _track_session(name)
-                    print(f"[bootstrap] +1 '{name}' (ready={game.pregenerated_clues.qsize()})")
+                    print(f"[bootstrap] +1 '{name}' aliases={aliases} (ready={game.pregenerated_clues.qsize()})")
                 else:
-                    print("[bootstrap] no usable result, retrying")
+                    reason = "duplicate alias" if duplicate else "no usable result"
+                    print(f"[bootstrap] {reason}, retrying")
                     await asyncio.sleep(1)
                 continue
 
@@ -862,21 +989,32 @@ async def background_generator(topic: str):
             # Process queued topics into clues whenever there's something to
             # process — independent of pool depth. Pool only gates the
             # architect; the writer should always be filling the pipeline.
-            # Writer model is depth-aware: fast when behind, slow when ahead.
+            # Writer model is depth-aware: fast (Llama) when ready ≤ 3, slow
+            # (Gemini Flash Lite) when there's enough buffer to absorb it.
             if game.topic_queue:
                 td = game.topic_queue.pop(0)
                 use_fast = ready <= FAST_MODEL_THRESHOLD
                 writer_model = MODEL_WRITER_FAST if use_fast else MODEL_WRITER_SLOW
                 try:
-                    answer, clue = await brain.generate_clue_from_facts(td, model=writer_model)
+                    answer, aliases, clue = await brain.generate_clue_from_facts(
+                        td, avoid=_avoid_list(), model=writer_model,
+                    )
                 except Exception as e:
                     print(f"[writer] '{td.get('name')}': {e}")
                     await asyncio.sleep(2)
                     continue
-                if answer and clue:
-                    game.pregenerated_clues.put_nowait((td.get("name") or answer, answer, clue))
-                    print(f"[writer] +1 '{td.get('name')}' via {writer_model} "
-                          f"(ready={game.pregenerated_clues.qsize()})")
+                if not (answer and clue):
+                    continue
+                # Dedup: if writer revealed an alias matching a used topic,
+                # drop this clue rather than queue a duplicate.
+                name = td.get("name") or answer
+                used = set(game.session_used_topics) - {name}  # don't reject self
+                if name in used or any(a in used for a in (aliases or [])):
+                    print(f"[writer] dropping '{name}' — alias collides with prior topic")
+                    continue
+                game.pregenerated_clues.put_nowait((name, answer, aliases, clue))
+                print(f"[writer] +1 '{name}' aliases={aliases} via {writer_model} "
+                      f"(ready={game.pregenerated_clues.qsize()})")
             else:
                 await asyncio.sleep(0.5)
     except asyncio.CancelledError:
@@ -886,7 +1024,7 @@ async def stream_next_clue(client_id: str):
     print(f"[stream] waiting for clue (queue={game.pregenerated_clues.qsize()}, conns={len(game.active_connections)})")
     try:
         try:
-            name, answer, clue = await asyncio.wait_for(
+            name, answer, aliases, clue = await asyncio.wait_for(
                 game.pregenerated_clues.get(), timeout=30
             )
         except asyncio.TimeoutError:
@@ -895,10 +1033,11 @@ async def stream_next_clue(client_id: str):
             await game.broadcast({"type": "error", "message": "AI is taking too long. Try a different topic."})
             return
 
-        print(f"[stream] got clue: '{answer}' ({len(clue.split())} words)")
+        print(f"[stream] got clue: '{answer}' aliases={aliases} ({len(clue.split())} words)")
         # User is about to see this clue — commit to the persistent avoid list
         _commit_global(name)
         game.current_answer = answer
+        game.current_answer_aliases = aliases or []
         game.current_clue = clue
         game.current_words = clue.split()
         game.stream_position = 0

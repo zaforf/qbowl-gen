@@ -697,35 +697,39 @@ function handleMessage({ data }) {
         if (msg.scores) ingestScores(msg.scores);
         break;
 
-    case 'reveal':
+    case 'reveal': {
         state = 'revealed';
         isBuzzer = false;
         hideTimer();
+        const fullAnswer = formatAnswer(msg.answer, msg.answer_aliases);
         if (currentCard) {
             setCardState(currentCard, 'revealed', 'revealed');
             renderReadUnread(msg.full_clue);
-            attachResult(currentCard, msg.answer,
+            attachResult(currentCard, fullAnswer,
                 `<span class="who">${esc(msg.winner)}</span> · “${esc(msg.guess)}”`);
-            setSummary(currentCard, msg.answer, `${msg.winner} ✓`);
+            setSummary(currentCard, fullAnswer, `${msg.winner} ✓`);
         }
         action('next');
         addEvent('correct',
             `<span class="who">${esc(msg.winner)}</span> · ${esc(msg.answer)}`);
         if (msg.scores) ingestScores(msg.scores);
         break;
+    }
 
-    case 'question_dead':
+    case 'question_dead': {
         state = 'revealed';
         hideTimer();
+        const fullAnswer = formatAnswer(msg.answer, msg.answer_aliases);
         if (currentCard) {
             setCardState(currentCard, 'dead', 'dead');
             if (msg.full_clue) renderReadUnread(msg.full_clue);
-            attachResult(currentCard, msg.answer, 'no correct buzz');
-            setSummary(currentCard, msg.answer, 'dead');
+            attachResult(currentCard, fullAnswer, 'no correct buzz');
+            setSummary(currentCard, fullAnswer, 'dead');
         }
         action('next');
         addEvent('dead', `dead · ${esc(msg.answer)}`);
         break;
+    }
 
     case 'reset':
         resetUI();
@@ -829,6 +833,13 @@ function setCardState(card, name, label) {
     const stateEl = card.querySelector('.qstate');
     stateEl.className = 'qstate ' + name;
     stateEl.textContent = label;
+}
+
+// Quizbowl-style display: "Primary (or Alt1; or Alt2)" when the writer
+// supplied alternates, otherwise just the primary.
+function formatAnswer(answer, aliases) {
+    if (!aliases || !aliases.length) return answer;
+    return answer + ' (or ' + aliases.join('; or ') + ')';
 }
 
 function attachResult(card, answer, metaHTML) {
