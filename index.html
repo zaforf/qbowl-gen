@@ -59,16 +59,20 @@
             border-bottom: 1px solid var(--rule);
             flex-shrink: 0;
         }
-        .brand { font-weight: 600; font-size: 14px; }
+        .brand {
+            font-weight: 600;
+            font-size: 14px;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
         .brand-dot {
             display: inline-block;
             width: 7px; height: 7px;
             background: var(--ink-3);
             border-radius: 50%;
-            margin: 0 2px 0 1px;
-            vertical-align: 2px;
         }
-        .brand-dot.live { background: var(--good); }
+        .brand-dot.live { background: var(--good); }  /* same green as 'correct' */
         .header-right {
             display: flex;
             align-items: center;
@@ -76,7 +80,25 @@
             color: var(--ink-2);
             font-size: 13px;
         }
-        .me { color: var(--ink); }
+        /* Top-right "you" — clickable to rename */
+        .me-name {
+            color: var(--ink);
+            cursor: text;
+            padding: 2px 8px;
+            border-radius: 4px;
+        }
+        .me-name:hover { background: var(--rule-soft); }
+        .me-input {
+            background: transparent;
+            border: 1px solid var(--rule);
+            padding: 1px 6px;
+            border-radius: 4px;
+            width: 110px;
+            font: inherit;
+            color: var(--ink);
+            outline: none;
+        }
+        .me-input:focus { border-color: var(--ink-2); }
         .reset {
             color: var(--ink-3);
             background: none;
@@ -170,7 +192,7 @@
             padding: 14px 18px;
             margin-bottom: 10px;
         }
-        .qcard[data-state="locked"]   { background: var(--bad-bg); }
+        /* No bg change on lock — the small state label is enough */
         .qcard[data-state="revealed"] { background: var(--good-bg); }
         .qcard[data-state="dead"]     { background: var(--warn-bg); }
 
@@ -216,13 +238,16 @@
             color: var(--ink-2);
         }
 
+        /* Cards in revealed/dead state are click-to-toggle */
+        .qcard[data-state="revealed"],
+        .qcard[data-state="dead"] { cursor: pointer; }
+
         /* Collapsed past-question card: a single compact line */
         .qcard.collapsed {
             padding: 8px 14px;
             margin-bottom: 6px;
-            cursor: pointer;
         }
-        .qcard.collapsed .qhead { margin-bottom: 0; }
+        .qcard.collapsed .qhead,
         .qcard.collapsed .qbody,
         .qcard.collapsed .qresult { display: none; }
         .qcard.collapsed .qsummary {
@@ -334,11 +359,7 @@
             padding: 2px 0;
         }
         .player-row .name { color: var(--ink); }
-        .player-row .name.me::after {
-            content: ' you';
-            color: var(--ink-3);
-            font-size: 11px;
-        }
+        .player-row .name.me { font-weight: 600; }
         .player-row .score { color: var(--ink-2); font-weight: 500; }
         .player-row .score.pos { color: var(--good); }
         .player-row .score.neg { color: var(--bad); }
@@ -377,7 +398,8 @@
     <span class="brand">qbowl<span class="brand-dot" id="conn-dot"></span>gen</span>
     <div class="header-right">
         <span><span id="online-count">1</span> online</span>
-        <span class="me" id="me-id">…</span>
+        <span class="me-name" id="me-id">…</span>
+        <input class="me-input hidden" id="me-edit" type="text" maxlength="24">
         <button class="reset" id="reset-btn">reset</button>
     </div>
 </header>
@@ -400,8 +422,7 @@
         <div class="action">
             <div class="action-line" id="action-line">
                 <span class="hint muted" id="hint-idle">
-                    <span class="key">⏎</span>
-                    start a round
+                    type a topic above to begin
                 </span>
                 <span class="hint" id="hint-buzz">
                     <span class="key">space</span>
@@ -444,7 +465,8 @@
 "use strict";
 
 // ── State ────────────────────────────────────────────────────────
-let state = 'idle';         // idle | loading | reading | locked | revealed
+// Mirror server phase. Source of truth = server messages.
+let state = 'idle';            // idle | loading | reading | locked | revealed
 let isBuzzer = false;
 let timerInterval = null;
 let currentCard = null;
@@ -453,7 +475,7 @@ let currentWordsRead = 0;
 let currentQNum = 0;
 const players = new Map();
 
-const clientId = (() => {
+let clientId = (() => {
     let id = localStorage.getItem('qb_cid');
     if (!id) {
         id = 'p_' + Math.random().toString(36).slice(2, 7);
@@ -465,6 +487,7 @@ const clientId = (() => {
 const $ = id => document.getElementById(id);
 const els = {
     me: $('me-id'),
+    meEdit: $('me-edit'),
     onlineCount: $('online-count'),
     connDot: $('conn-dot'),
     topic: $('topic-input'),
@@ -486,10 +509,12 @@ const els = {
 };
 els.me.textContent = clientId;
 
-// Action-zone modes are mutually exclusive
+// ── Action zone ──────────────────────────────────────────────────
+// Modes are mutually exclusive. The timer is controlled INDEPENDENTLY
+// (by showTimer/hideTimer) because it appears in multiple modes.
 function action(mode, opts = {}) {
     [els.hintIdle, els.hintBuzz, els.hintWaiting,
-     els.answer, els.hintNext, els.hintLoading, els.timer].forEach(e => e.classList.add('hidden'));
+     els.answer, els.hintNext, els.hintLoading].forEach(e => e.classList.add('hidden'));
 
     if (mode === 'idle')    els.hintIdle.classList.remove('hidden');
     if (mode === 'reading') els.hintBuzz.classList.remove('hidden');
@@ -503,8 +528,6 @@ function action(mode, opts = {}) {
         els.answer.classList.remove('hidden');
         els.answer.value = '';
         els.answer.focus();
-        els.timer.classList.remove('hidden');
-        startTimer(10000);
     }
 }
 
@@ -520,16 +543,54 @@ ws.onmessage = ({ data }) => {
 
     switch (msg.type) {
 
+    case 'round_started':
+        // Mirror the topic everywhere; clear local stream for the new round
+        els.topic.value = msg.topic || '';
+        state = 'loading';
+        els.stream.innerHTML = '';
+        els.streamEmpty.textContent = 'Curating topics…';
+        els.stream.appendChild(els.streamEmpty);
+        currentCard = null;
+        currentBody = null;
+        currentWordsRead = 0;
+        currentQNum = 0;
+        action('loading');
+        addEvent('join', `<span class="who">${esc(msg.starter)}</span> started a round on “${esc(msg.topic)}”`);
+        break;
+
+    case 'player_renamed': {
+        // Migrate local map
+        if (players.has(msg.old)) {
+            const data = players.get(msg.old);
+            players.delete(msg.old);
+            players.set(msg.new, data);
+        } else if (!players.has(msg.new)) {
+            players.set(msg.new, { score: 0 });
+        }
+        const wasMe = (msg.old === clientId);
+        if (wasMe) {
+            clientId = msg.new;
+            localStorage.setItem('qb_cid', clientId);
+        }
+        // Top-right name always reflects current clientId (stable element ref)
+        els.me.textContent = clientId;
+        if (msg.scores) ingestScores(msg.scores);
+        renderPlayers();
+        addEvent('join',
+            `<span class="who">${esc(msg.old)}</span> renamed to <span class="who">${esc(msg.new)}</span>`);
+        break;
+    }
+
     case 'state_sync':
+        // Players + scores
         if (msg.players) msg.players.forEach(id => {
             if (!players.has(id)) players.set(id, { score: 0 });
         });
         if (msg.scores) ingestScores(msg.scores);
         renderPlayers();
+        // Late-join mid-question: rebuild the active card
         if (msg.partial_clue) {
-            // Late-join mid-question
             currentQNum = msg.question_number || 0;
-            state = msg.locked ? 'locked' : 'reading';
             currentCard = createActiveCard(currentQNum);
             currentBody = currentCard.querySelector('.qbody');
             currentWordsRead = msg.words_read || 0;
@@ -541,12 +602,21 @@ ws.onmessage = ({ data }) => {
                 s.textContent = (i ? ' ' : '') + w;
                 currentBody.appendChild(s);
             });
-            if (msg.locked) {
-                setCardState(currentCard, 'locked', `${msg.winner} answering`);
-                action(msg.winner === clientId ? 'answer' : 'waiting', { who: msg.winner });
-            } else {
-                action('reading');
-            }
+        }
+        // Phase-driven UI
+        if (msg.phase === 'reading' || msg.phase === 'buzz_window') {
+            state = 'reading';
+            if (currentCard) setCardState(currentCard, 'reading', 'reading');
+            action('reading');
+        } else if (msg.phase === 'answering') {
+            state = 'locked';
+            isBuzzer = (msg.winner === clientId);
+            if (currentCard) setCardState(currentCard, 'locked', `${msg.winner} answering`);
+            action(isBuzzer ? 'answer' : 'waiting', { who: msg.winner });
+        }
+        // Resume an active timer countdown
+        if (msg.timer && msg.timer.remaining_ms > 0) {
+            showTimer(msg.timer.remaining_ms);
         }
         break;
 
@@ -571,14 +641,24 @@ ws.onmessage = ({ data }) => {
         isBuzzer = (msg.winner === clientId);
         if (currentCard) setCardState(currentCard, 'locked', `${msg.winner} answering`);
         action(isBuzzer ? 'answer' : 'waiting', { who: msg.winner });
+        // Server-driven answer timer — visible to EVERYONE
+        if (msg.answer_window_ms) showTimer(msg.answer_window_ms);
         addEvent('lock', `<span class="who">${esc(msg.winner)}</span> buzzed`);
+        break;
+
+    case 'buzz_window':
+        // Reading just finished. Anyone can still buzz; show the countdown.
+        state = 'reading';
+        if (currentCard) setCardState(currentCard, 'reading', 'reading');
+        action('reading');
+        showTimer(msg.duration_ms || 10000);
         break;
 
     case 'wrong_buzz':
         // No feedback transmitted, by design.
         state = 'reading';
         isBuzzer = false;
-        stopTimer();
+        hideTimer();
         if (currentCard) setCardState(currentCard, 'reading', 'reading');
         action('reading');
         addEvent('wrong',
@@ -589,7 +669,7 @@ ws.onmessage = ({ data }) => {
     case 'reveal':
         state = 'revealed';
         isBuzzer = false;
-        stopTimer();
+        hideTimer();
         if (currentCard) {
             setCardState(currentCard, 'revealed', 'revealed');
             renderReadUnread(msg.full_clue);
@@ -605,7 +685,7 @@ ws.onmessage = ({ data }) => {
 
     case 'question_dead':
         state = 'revealed';
-        stopTimer();
+        hideTimer();
         if (currentCard) {
             setCardState(currentCard, 'dead', 'dead');
             if (msg.full_clue) renderReadUnread(msg.full_clue);
@@ -637,11 +717,14 @@ ws.onmessage = ({ data }) => {
         break;
 
     case 'error':
-        if (state === 'reading' || state === 'loading') {
+        addEvent('join', `error · ${esc(msg.message)}`);
+        // Only reset to idle on system flow errors (queue empty / stream failed).
+        // Personal errors (rename clash, late buzz) shouldn't disturb game state.
+        if ((state === 'reading' || state === 'loading') &&
+            /no more|failed/i.test(msg.message || '')) {
             state = 'idle';
             action('idle');
         }
-        addEvent('join', `error · ${esc(msg.message)}`);
         break;
     }
 };
@@ -673,21 +756,13 @@ function createActiveCard(qnum) {
         <div class="qsummary"></div>`;
     // Active card always at the top of the stream
     els.stream.insertBefore(card, els.stream.firstChild);
-    // Click on a collapsed card toggles expansion
-    card.addEventListener('click', e => {
-        // Only react to clicks when collapsed
-        if (card.classList.contains('collapsed')) {
-            // Expand inline (tap to peek). Click again to recollapse.
-            card.classList.remove('collapsed');
-            // Recollapse on next click anywhere
-            const onAway = ev => {
-                if (!card.contains(ev.target)) {
-                    card.classList.add('collapsed');
-                    document.removeEventListener('click', onAway, true);
-                }
-            };
-            setTimeout(() => document.addEventListener('click', onAway, true), 0);
-        }
+    // Click toggles open/collapsed once the card is in a finished state.
+    // Skip if the user is selecting text inside the card.
+    card.addEventListener('click', () => {
+        const s = card.dataset.state;
+        if (s !== 'revealed' && s !== 'dead') return;
+        if (window.getSelection && window.getSelection().toString().length > 0) return;
+        card.classList.toggle('collapsed');
     });
     return card;
 }
@@ -773,23 +848,29 @@ function addEvent(kind, html) {
     els.activity.insertBefore(el, els.activity.firstChild);
 }
 
-// ── Timer ───────────────────────────────────────────────────────
-function startTimer(ms) {
-    stopTimer();
+// ── Timer (display only — server is authoritative) ─────────────
+// We just animate the bar; the server triggers transitions on its own
+// expiration. So if the client clock drifts or hits 100% early, nothing
+// bad happens — the server decides what's next.
+function showTimer(ms) {
+    els.timer.classList.remove('hidden');
+    stopTimerInterval();
     const t0 = Date.now();
+    els.timerFill.style.width = '0%';
     timerInterval = setInterval(() => {
         const pct = Math.min(((Date.now() - t0) / ms) * 100, 100);
         els.timerFill.style.width = pct + '%';
-        if (pct >= 100) {
-            stopTimer();
-            ws.send(JSON.stringify({ type: 'submit_answer', guess: '' }));
-        }
+        if (pct >= 100) stopTimerInterval();
     }, 100);
 }
-function stopTimer() {
-    clearInterval(timerInterval);
-    timerInterval = null;
+function hideTimer() {
+    stopTimerInterval();
+    els.timer.classList.add('hidden');
     els.timerFill.style.width = '0%';
+}
+function stopTimerInterval() {
+    if (timerInterval) clearInterval(timerInterval);
+    timerInterval = null;
 }
 
 // ── Helpers ─────────────────────────────────────────────────────
@@ -842,7 +923,7 @@ function resetUI() {
     currentBody = null;
     currentWordsRead = 0;
     currentQNum = 0;
-    stopTimer();
+    hideTimer();
     els.stream.innerHTML = '';
     els.streamEmpty.textContent = 'Type a topic and start a round.';
     els.stream.appendChild(els.streamEmpty);
@@ -864,6 +945,39 @@ window.addEventListener('keydown', e => {
     if (document.activeElement.tagName === 'INPUT') return;
     if (e.code === 'Space') { e.preventDefault(); buzz(); }
     if (e.key.toLowerCase() === 'n' && state === 'revealed') goNext();
+});
+
+// ── Rename (stable elements — never replaced) ──────────────────
+// We toggle visibility between els.me (span) and els.meEdit (input).
+// References stay valid forever; updates from player_renamed reliably
+// apply to els.me because it's the same DOM node every time.
+els.me.title = 'Click to rename';
+els.me.addEventListener('click', () => {
+    if (!els.meEdit.classList.contains('hidden')) return; // already editing
+    els.meEdit.value = clientId;
+    els.me.classList.add('hidden');
+    els.meEdit.classList.remove('hidden');
+    els.meEdit.focus();
+    els.meEdit.select();
+});
+
+function commitRename() {
+    if (els.meEdit.classList.contains('hidden')) return;
+    const v = els.meEdit.value.trim();
+    els.meEdit.classList.add('hidden');
+    els.me.classList.remove('hidden');
+    if (v && v !== clientId) {
+        ws.send(JSON.stringify({ type: 'rename', name: v }));
+    }
+}
+function cancelRename() {
+    els.meEdit.classList.add('hidden');
+    els.me.classList.remove('hidden');
+}
+els.meEdit.addEventListener('blur', commitRename);
+els.meEdit.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); commitRename(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancelRename(); }
 });
 
 // Initial state
