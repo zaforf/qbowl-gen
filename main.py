@@ -296,7 +296,7 @@ class Brain:
     def _avoid_block(avoid: Optional[List[str]]) -> str:
         if not avoid:
             return ""
-        recent = list(dict.fromkeys(avoid))[-30:]
+        recent = list(dict.fromkeys(avoid))[-50:]
         return "\n\nDO NOT pick any of these (already used):\n" + "\n".join(f"- {t}" for t in recent)
 
     async def generate_topic_list(self, general_topic: str, avoid: Optional[List[str]] = None, n: int = 5):
