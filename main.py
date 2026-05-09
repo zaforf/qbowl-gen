@@ -125,14 +125,18 @@ gemini_client = OpenAI(
 # ── Models ────────────────────────────────────────────────────────
 # Up to MAX_IN_FLIGHT writer tasks run concurrently. When the architect
 # topic queue is empty, writers pick their own topic (writer-pick path).
-# Fast writer uses 70B (factual accuracy, strong instruction following) for bootstrapping.
-# Slow writer uses Gemini Flash Lite for steady-state quality generation.
-# Fallback chain: 70B → Scout (Groq) when 70B quota hit; Gemini → Scout when Gemini RPM'd.
-MODEL_ARCHITECT    = "gemini-3.1-flash-lite"                          # Google; separate provider quota
-MODEL_WRITER_FAST  = "llama-3.3-70b-versatile"                        # Groq, reliable factual accuracy
-MODEL_WRITER_SLOW  = "gemini-3.1-flash-lite"                          # Google; quality steady-state
-MODEL_FALLBACK     = "meta-llama/llama-4-scout-17b-16e-instruct"      # Groq; rate-limit fallback for both
-MODEL_JUDGE        = "meta-llama/llama-4-scout-17b-16e-instruct"      # Groq, sub-second validation
+# Primary models per role; fallback sequences defined below.
+MODEL_ARCHITECT    = "gemini-3.1-flash-lite"                          # Google
+MODEL_WRITER_FAST  = "llama-3.3-70b-versatile"                        # Groq
+MODEL_WRITER_SLOW  = "openai/gpt-oss-120b"                            # Groq
+MODEL_JUDGE        = "meta-llama/llama-4-scout-17b-16e-instruct"      # Groq
+
+# Fallback sequences tried in order on rate-limit errors (compound → Scout = last resorts).
+_FALLBACK_SEQS = {
+    MODEL_ARCHITECT:   ["gemini-3.1-flash-lite", "openai/gpt-oss-120b",  "groq/compound", "llama-3.3-70b-versatile", "meta-llama/llama-4-scout-17b-16e-instruct"],
+    MODEL_WRITER_FAST: ["llama-3.3-70b-versatile", "openai/gpt-oss-120b", "gemini-3.1-flash-lite", "groq/compound", "meta-llama/llama-4-scout-17b-16e-instruct"],
+    MODEL_WRITER_SLOW: [ "gemini-3.1-flash-lite", "llama-3.3-70b-versatile", "openai/gpt-oss-120b", "groq/compound", "meta-llama/llama-4-scout-17b-16e-instruct"],
+}
 
 # ── Room password (WebSocket) ─────────────────────────────────────
 # If set, clients must pass the same value as query param: /ws/{id}?token=...
@@ -167,8 +171,9 @@ FACTS:
 """
 
 SYSTEM_PROMPT_WRITER_PICK = """
-You are an expert Quizbowl writer. Given a subject area, pick a named, specific
-entity (work, person, law, theorem, event) and write a complete pyramidal tossup.
+You are an expert Quizbowl writer. Given a subject area, pick a well-known named
+entity that stands on its own — a person, work, law, theorem, named event, or landmark.
+Do NOT pick sub-components, minor variants, or parts of a larger named thing.
 
 If a "DO NOT pick" list is given, avoid those names and their aliases.
 
@@ -177,15 +182,13 @@ If a "DO NOT pick" list is given, avoid those names and their aliases.
 - Pyramidal: most obscure clue first, most common last.
 - Refer to the answer only as "this <category>".
 - Concrete, factual clues only — specific names, dates, places, terms.
-- End with: "For 10 points, name this <category> <giveaway description>."
-- Never mention the answer, any alias, abbreviation, or translation in the clue.
-- For eponymous answers, reserve the name/giveaway for later sentences — opening
-  with it makes it trivially buzzable.
+- End with: "For 10 points, name this <category> <giveaway description>." The giveaway must NOT name or spell out the answer or its acronym — describe it instead.
+- Never mention the answer, any alias, abbreviation, or translation anywhere in the clue, including the giveaway sentence.
+- Treat every word in the answer as a spoiler: ideally none appear until the final giveaway sentence, and never in the first sentence. For eponymous answers this includes the person's name ("Eiffel" for Eiffel Tower).
 
 ### Answer line
-List established alternate names — pen names, transliterations, initials, medical
-eponyms, common abbreviations. Be generous but accurate; don't fabricate.
-Separate with "; or". Omit brackets entirely if none apply.
+List every common alternate name in square brackets, separated by "; or".
+If no alternates exist, omit the brackets.
 - "Mark Twain [or Samuel Clemens]"
 - "Knuth–Morris–Pratt algorithm [or KMP]"
 
@@ -211,13 +214,11 @@ the giveaway.
 - End with: "For 10 points, name this <category> <giveaway description>."
 - Never mention the answer, any alias, abbreviation, or translation in the clue.
   If an input fact would leak the answer, paraphrase it.
-- For eponymous answers, reserve the creator's name for later sentences — opening
-  with it makes the first clue trivially buzzable.
+- Treat every word in the answer as a spoiler: ideally none appear until the final giveaway sentence, and never in the first sentence. For eponymous answers this includes the person's name ("Eiffel" for Eiffel Tower).
 
 ### Answer line
-Use aliases listed in ALIASES (if provided) and any other established alternates
-you know — pen names, transliterations, initials, medical eponyms, abbreviations.
-Be generous but accurate; don't fabricate names.
+Use aliases listed in ALIASES (if provided). Include other common alternate names
+only if well-established — transliterations, initials, recognized pen names.
 Separate with "; or". Omit brackets entirely if none apply.
 - "Mark Twain [or Samuel Clemens]"
 - "Knuth–Morris–Pratt algorithm [or KMP]"
@@ -260,52 +261,42 @@ class Brain:
         return self.gemini if model.startswith(("gemini", "gemma")) else self.groq
 
     async def _chat(self, model: str, messages: list, **kwargs):
-        """Chat completion with tiered rate-limit fallback.
+        """Chat completion with sequential rate-limit fallback.
         Returns (response, model_actually_used).
 
-        Fallback chain:
-          MODEL_WRITER_FAST  → MODEL_FALLBACK   (70B quota → Scout on Groq)
-          MODEL_WRITER_SLOW  → MODEL_FALLBACK   (Gemini RPM → Scout on Groq)
-          MODEL_ARCHITECT    → MODEL_FALLBACK   (Gemini RPM → Scout on Groq)
-
-        Groq does not support reasoning_effort — strip it when falling back
-        from a Gemini model.
+        Each role has a fallback sequence in _FALLBACK_SEQS. On a rate-limit
+        error, the next model in the sequence is tried until one succeeds.
+        Groq does not support reasoning_effort — stripped for any Groq candidate.
         """
         _GROQ_UNSUPPORTED = {"reasoning_effort"}
+        sequence = _FALLBACK_SEQS.get(model, [model])
+        last_err: Exception = RuntimeError("no candidates")
 
-        try:
-            resp = await asyncio.to_thread(
-                self._client_for(model).chat.completions.create,
-                model=model, messages=messages, **kwargs,
-            )
-            return resp, model
-        except Exception as e:
-            s = str(e).lower()
-            rate_limited = any(k in s for k in ("429", "rate_limit", "quota", "tpd", "rpm"))
-            if not rate_limited:
-                raise
+        for i, candidate in enumerate(sequence):
+            is_groq = not candidate.startswith(("gemini", "gemma"))
+            c_kwargs = {k: v for k, v in kwargs.items()
+                        if not (is_groq and k in _GROQ_UNSUPPORTED)}
+            if i > 0:
+                print(f"[fallback] {sequence[i-1]} → {candidate} (rate-limited): {last_err}")
+            try:
+                resp = await asyncio.to_thread(
+                    self._client_for(candidate).chat.completions.create,
+                    model=candidate, messages=messages, **c_kwargs,
+                )
+                return resp, candidate
+            except Exception as e:
+                s = str(e).lower()
+                if not any(k in s for k in ("429", "rate_limit", "quota", "tpd", "rpm")):
+                    raise
+                last_err = e
 
-            if model == MODEL_WRITER_FAST:
-                fb = MODEL_FALLBACK          # Scout → 70B (both Groq, no stripping)
-                fb_kwargs = kwargs
-            elif model in (MODEL_WRITER_SLOW, MODEL_ARCHITECT):
-                fb = MODEL_FALLBACK          # Gemini → 70B (strip Groq-unsupported)
-                fb_kwargs = {k: v for k, v in kwargs.items() if k not in _GROQ_UNSUPPORTED}
-            else:
-                raise
-
-            print(f"[fallback] {model} → {fb} (rate-limited)")
-            resp = await asyncio.to_thread(
-                self._client_for(fb).chat.completions.create,
-                model=fb, messages=messages, **fb_kwargs,
-            )
-            return resp, fb
+        raise last_err
 
     @staticmethod
     def _avoid_block(avoid: Optional[List[str]]) -> str:
         if not avoid:
             return ""
-        recent = list(dict.fromkeys(avoid))[-50:]
+        recent = list(dict.fromkeys(avoid))[-30:]
         return "\n\nDO NOT pick any of these (already used):\n" + "\n".join(f"- {t}" for t in recent)
 
     async def generate_topic_list(self, general_topic: str, avoid: Optional[List[str]] = None, n: int = 5):
@@ -322,7 +313,6 @@ class Brain:
                 {"role": "user", "content": user_msg},
             ],
             temperature=0.8,
-            reasoning_effort="medium",
         )
         text = _strip_thinking(response.choices[0].message.content or "")
         print(f"\n{'='*60}\n[ARCHITECT – {used}] (n={n}, avoid={len(avoid or [])})\n{text}\n{'='*60}\n")
@@ -340,12 +330,12 @@ class Brain:
                     facts.append(ls.strip("- ").strip())
             if name:
                 topics.append({"name": name, "aliases": aliases, "facts": "\n".join(facts)})
-        return topics
+        return topics, used
 
     async def generate_topic_and_clue(self, general_topic: str, avoid: Optional[List[str]] = None,
                                        model: str = MODEL_WRITER_FAST):
         """Combined writer: pick topic + write tossup in one call.
-        Returns (topic_name, primary_answer, aliases, clue) or (None, None, None, None)."""
+        Returns (topic_name, primary_answer, aliases, clue, used_model) or (None,)*5."""
         user_msg = (
             f"Subject: {general_topic}. Pick one specific topic and write a tossup."
             f"{self._avoid_block(avoid)}"
@@ -365,16 +355,16 @@ class Brain:
             clue = text.split("CLUE:", 1)[1].strip()
             primary, aliases = _parse_answer_line(answer_line)
             if primary and clue:
-                return primary, primary, aliases, clue
+                return primary, primary, aliases, clue, used
         except (IndexError, AttributeError):
             pass
-        return None, None, None, None
+        return None, None, None, None, used
 
     async def generate_clue_from_facts(self, topic_data: dict,
                                         avoid: Optional[List[str]] = None,
                                         model: str = MODEL_WRITER_SLOW):
         """Steady-state writer: turn architect's topic+facts into a tossup.
-        Returns (primary_answer, aliases, clue) or (None, None, None)."""
+        Returns (primary_answer, aliases, clue, used_model) or (None,)*4."""
         aliases_line = f"\nALIASES: {topic_data['aliases']}" if topic_data.get('aliases') else ""
         user_msg = (
             f"TOPIC: {topic_data['name']}{aliases_line}\nFACTS:\n{topic_data['facts']}"
@@ -395,14 +385,14 @@ class Brain:
             # Writer signals "this topic aliases something on the avoid list"
             if answer_line.upper().startswith("SKIP"):
                 print(f"[writer] SKIP requested for '{topic_data.get('name')}' (alias collision)")
-                return None, None, None
+                return None, None, None, used
             clue = text.split("CLUE:", 1)[1].strip()
             primary, aliases = _parse_answer_line(answer_line)
             if primary and clue:
-                return primary, aliases, clue
+                return primary, aliases, clue, used
         except (IndexError, AttributeError):
             pass
-        return None, None, None
+        return None, None, None, used
 
     async def validate_answer(self, answer: str, aliases: List[str], guess: str, clue: str):
         # Stage 1: cheap token-set prefilter against primary AND every alias.
@@ -459,7 +449,7 @@ MAX_IN_FLIGHT        = 1   # max concurrent writer tasks
 
 # ── Persistent global "already used" topic log ──────────────────────
 USED_TOPICS_FILE = "used_topics.json"
-USED_TOPICS_CAP = 30  # only the most recent N globally — keeps prompts small
+USED_TOPICS_CAP = 20  # only the most recent N globally — keeps prompts small
 
 
 def load_used_topics() -> List[str]:
@@ -997,11 +987,13 @@ async def background_generator(topic: str):
     """
     in_flight = 0
     architect_running = False
+    architect_error_cooldown = 0.0  # monotonic time before next architect retry
+    writer_error_cooldown = 0.0     # monotonic time before next writer dispatch
 
     async def do_architect():
-        nonlocal architect_running
+        nonlocal architect_running, architect_error_cooldown
         try:
-            topics = await brain.generate_topic_list(
+            topics, used_model = await brain.generate_topic_list(
                 topic, avoid=_avoid_list(), n=TOPUP_TOPIC_FETCH,
             )
             added = 0
@@ -1012,19 +1004,22 @@ async def background_generator(topic: str):
                     _track_session(name)
                     added += 1
             print(f"[architect] queued {added}/{len(topics)} topics")
+            if used_model == MODEL_JUDGE:
+                await game.broadcast({"type": "error", "message": "Hitting rate limits (now using a bad model), slow down!"})
         except Exception as e:
             print(f"[architect] error: {e}")
+            architect_error_cooldown = time.monotonic() + 60.0  # 60s back-off on any error
         finally:
             architect_running = False
 
     async def do_write(td=None):
-        nonlocal in_flight
+        nonlocal in_flight, writer_error_cooldown
         try:
             ready = game.pregenerated_clues.qsize()
             model = MODEL_WRITER_FAST if ready + in_flight <= FAST_MODEL_THRESHOLD else MODEL_WRITER_SLOW
 
             if td is None:
-                name, answer, aliases, clue = await brain.generate_topic_and_clue(
+                name, answer, aliases, clue, used_model = await brain.generate_topic_and_clue(
                     topic, avoid=_avoid_list(), model=model,
                 )
                 if not (name and answer and clue):
@@ -1037,22 +1032,25 @@ async def background_generator(topic: str):
                     return
                 game.pregenerated_clues.put_nowait((name, answer, aliases, clue))
                 _track_session(name)
-                print(f"[writer-pick] +1 '{name}' via {model} (ready={game.pregenerated_clues.qsize()})")
+                print(f"[writer-pick] +1 '{name}' via {used_model} (ready={game.pregenerated_clues.qsize()})")
             else:
-                answer, aliases, clue = await brain.generate_clue_from_facts(
+                answer, aliases, clue, used_model = await brain.generate_clue_from_facts(
                     td, avoid=_avoid_list(), model=model,
                 )
                 if not (answer and clue):
                     return
                 name = td.get("name") or answer
-                used = set(game.session_used_topics) - {name}
-                if name in used or any(a in used for a in (aliases or [])):
+                session_set = set(game.session_used_topics) - {name}
+                if name in session_set or any(a in session_set for a in (aliases or [])):
                     print(f"[writer] dropping '{name}' — alias collision")
                     return
                 game.pregenerated_clues.put_nowait((name, answer, aliases, clue))
-                print(f"[writer] +1 '{name}' aliases={aliases} via {model} (ready={game.pregenerated_clues.qsize()})")
+                print(f"[writer] +1 '{name}' aliases={aliases} via {used_model} (ready={game.pregenerated_clues.qsize()})")
+            if used_model == MODEL_JUDGE:  # Scout used outside judge role
+                await game.broadcast({"type": "error", "message": "Hitting rate limits (now using a bad model), slow down!"})
         except Exception as e:
             print(f"[writer] error: {e}")
+            writer_error_cooldown = time.monotonic() + 60.0  # 60s back-off when all models exhausted
         finally:
             in_flight -= 1
 
@@ -1062,15 +1060,17 @@ async def background_generator(topic: str):
 
             # Dispatch writer tasks up to MAX_IN_FLIGHT / MAX_PREGENERATED cap.
             # Uses architect topics when available, writer-pick otherwise.
-            while ready + in_flight < MAX_PREGENERATED and in_flight < MAX_IN_FLIGHT:
+            while (ready + in_flight < MAX_PREGENERATED and in_flight < MAX_IN_FLIGHT
+                   and time.monotonic() >= writer_error_cooldown):
                 td = game.topic_queue.pop(0) if game.topic_queue else None
                 in_flight += 1
                 asyncio.create_task(do_write(td))
 
-            # Dispatch architect when pool is low and queue is empty.
+            # Dispatch architect when pool is low, queue empty, and not in error back-off.
             if (not architect_running
                     and not game.topic_queue
-                    and ready + len(game.topic_queue) + in_flight < LOW_QUEUE_THRESHOLD):
+                    and ready + in_flight < LOW_QUEUE_THRESHOLD
+                    and time.monotonic() >= architect_error_cooldown):
                 architect_running = True
                 asyncio.create_task(do_architect())
 
@@ -1088,7 +1088,7 @@ async def stream_next_clue(client_id: str):
         except asyncio.TimeoutError:
             print(f"[stream] TIMEOUT waiting for clue")
             game.phase = PHASE_IDLE
-            await game.broadcast({"type": "error", "message": "AI is taking too long. Try a different topic."})
+            await game.broadcast({"type": "error", "message": "Hitting rate limits, slow down!"})
             return
 
         print(f"[stream] got clue: '{answer}' aliases={aliases} ({len(clue.split())} words)")
