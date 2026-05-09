@@ -325,6 +325,9 @@
         .hint.muted:hover { color: var(--ink-3); }
         .hint.muted .key { color: var(--ink-3); }
         .hint-sep { color: var(--ink-3); font-size: 12px; user-select: none; }
+        .hint-chat { margin-left: auto; }
+        .ev.chat { color: var(--ink-2); }
+        .ev.chat .who { font-weight: 600; }
 
         @media (hover: none) {
             .hint { padding: 10px 4px; font-size: 14px; }
@@ -467,6 +470,10 @@
                     <span class="key">…</span>
                     preparing
                 </span>
+                <span class="hint hint-chat" id="hint-chat">
+                    <span class="key">T</span>
+                    chat
+                </span>
             </div>
             <div class="timer hidden" id="timer">
                 <div class="timer-fill" id="timer-fill"></div>
@@ -508,6 +515,7 @@ const API_BASE_URL = resolveApiBase();
 // ── State ────────────────────────────────────────────────────────
 // Mirror server phase. Source of truth = server messages.
 let state = 'idle';            // idle | loading | reading | locked | revealed
+let chatMode = false;
 let currentRoundTopic = null;
 let isBuzzer = false;
 let timerInterval = null;
@@ -545,6 +553,7 @@ const els = {
     hintWaiting: $('hint-waiting'),
     hintNext: $('hint-next'),
     hintLoading: $('hint-loading'),
+    hintChat: $('hint-chat'),
     timer: $('timer'),
     timerFill: $('timer-fill'),
     playersList: $('players-list'),
@@ -560,6 +569,7 @@ els.me.textContent = clientId;
 function action(mode, opts = {}) {
     [els.hintIdle, els.hintBuzz, els.hintSkip, els.hintSepSkip, els.hintWaiting,
      els.answer, els.hintNext, els.hintLoading].forEach(e => e.classList.add('hidden'));
+    chatMode = false;
 
     if (mode === 'idle')    els.hintIdle.classList.remove('hidden');
     if (mode === 'reading') {
@@ -574,6 +584,7 @@ function action(mode, opts = {}) {
         els.hintWaiting.classList.remove('hidden');
     }
     if (mode === 'answer') {
+        els.answer.placeholder = 'type your answer…';
         els.answer.classList.remove('hidden');
         els.answer.value = '';
         els.answer.focus();
@@ -872,6 +883,10 @@ function handleMessage({ data }) {
         renderPlayers();
         els.onlineCount.textContent = msg.count;
         addEvent('join', `<span class="who">${esc(msg.player)}</span> left`);
+        break;
+
+    case 'chat':
+        addEvent('chat', `<span class="who">${esc(msg.who)}</span>: ${esc(msg.text)}`);
         break;
 
     case 'error':
@@ -1202,6 +1217,23 @@ function submitAnswer() {
     els.answer.value = '';
 }
 
+function openChat() {
+    if (state === 'answer') return; // input already in use for answering
+    chatMode = true;
+    els.answer.placeholder = 'send a message…';
+    els.answer.classList.remove('hidden');
+    els.answer.value = '';
+    els.answer.focus();
+}
+
+function sendChat() {
+    const text = els.answer.value.trim();
+    if (text) sendMessage({ type: 'chat', text });
+    els.answer.classList.add('hidden');
+    els.answer.value = '';
+    chatMode = false;
+}
+
 function resetUI() {
     state = 'idle';
     isBuzzer = false;
@@ -1231,15 +1263,20 @@ els.startBtn.addEventListener('click', startGame);
 els.hintBuzz.addEventListener('click', buzz);
 els.hintSkip.addEventListener('click', goSkip);
 els.hintNext.addEventListener('click', goNext);
+els.hintChat.addEventListener('click', openChat);
 els.resetBtn.addEventListener('click', () => sendMessage({ type: 'reset' }));
 els.topic.addEventListener('keydown',  e => { if (e.key === 'Enter') startGame(); });
-els.answer.addEventListener('keydown', e => { if (e.key === 'Enter') submitAnswer(); });
+els.answer.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { chatMode ? sendChat() : submitAnswer(); }
+    if (e.key === 'Escape' && chatMode) { sendChat(); } // send empty = cancel
+});
 
 window.addEventListener('keydown', e => {
     if (document.activeElement.tagName === 'INPUT') return;
     if (e.code === 'Space') { e.preventDefault(); buzz(); }
     if (e.key.toLowerCase() === 's' && state === 'reading') goSkip();
     if (e.key.toLowerCase() === 'n' && state === 'revealed') goNext();
+    if (e.key.toLowerCase() === 't') { e.preventDefault(); openChat(); }
 });
 
 // ── Rename (stable elements — never replaced) ──────────────────

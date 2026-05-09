@@ -179,8 +179,8 @@ If a "DO NOT pick" list is given, avoid those names and their aliases.
 - Concrete, factual clues only — specific names, dates, places, terms.
 - End with: "For 10 points, name this <category> <giveaway description>."
 - Never mention the answer, any alias, abbreviation, or translation in the clue.
-- For eponymous answers, reserve the a giveaway for later sentences — opening
-  with it makes the first clue trivially buzzable.
+- For eponymous answers, reserve the name/giveaway for later sentences — opening
+  with it makes it trivially buzzable.
 
 ### Answer line
 List established alternate names — pen names, transliterations, initials, medical
@@ -305,7 +305,7 @@ class Brain:
     def _avoid_block(avoid: Optional[List[str]]) -> str:
         if not avoid:
             return ""
-        recent = list(dict.fromkeys(avoid))[-100:]
+        recent = list(dict.fromkeys(avoid))[-50:]
         return "\n\nDO NOT pick any of these (already used):\n" + "\n".join(f"- {t}" for t in recent)
 
     async def generate_topic_list(self, general_topic: str, avoid: Optional[List[str]] = None, n: int = 5):
@@ -884,6 +884,11 @@ async def websocket_endpoint(websocket: WebSocket, client_id: str):
                     # All wrong-answer paths funnel through force_wrong_answer
                     # (handles score, broadcast, transition to next phase).
                     await force_wrong_answer(client_id, guess)
+
+            elif mtype == "chat":
+                text = _sanitize(message.get("text", "").strip(), 200)
+                if text:
+                    await game.broadcast({"type": "chat", "who": client_id, "text": text})
 
             elif mtype == "skip":
                 if game.phase in (PHASE_READING, PHASE_BUZZ_WINDOW):
