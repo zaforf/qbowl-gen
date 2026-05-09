@@ -125,13 +125,13 @@ gemini_client = OpenAI(
 # ── Models ────────────────────────────────────────────────────────
 # Up to MAX_IN_FLIGHT writer tasks run concurrently. When the architect
 # topic queue is empty, writers pick their own topic (writer-pick path).
-# Fast writer uses Scout (594 t/s on Groq) to bootstrap an empty queue quickly.
+# Fast writer uses 70B (factual accuracy, strong instruction following) for bootstrapping.
 # Slow writer uses Gemini Flash Lite for steady-state quality generation.
-# Fallback chain: Scout → 70B (Groq) when Scout quota hit; Gemini → 70B when Gemini RPM'd.
+# Fallback chain: 70B → Scout (Groq) when 70B quota hit; Gemini → Scout when Gemini RPM'd.
 MODEL_ARCHITECT    = "gemini-3.1-flash-lite"                          # Google; separate provider quota
-MODEL_WRITER_FAST  = "meta-llama/llama-4-scout-17b-16e-instruct"      # Groq, 594 t/s
+MODEL_WRITER_FAST  = "llama-3.3-70b-versatile"                        # Groq, reliable factual accuracy
 MODEL_WRITER_SLOW  = "gemini-3.1-flash-lite"                          # Google; quality steady-state
-MODEL_FALLBACK     = "llama-3.3-70b-versatile"                        # Groq; rate-limit fallback for both
+MODEL_FALLBACK     = "meta-llama/llama-4-scout-17b-16e-instruct"      # Groq; rate-limit fallback for both
 MODEL_JUDGE        = "meta-llama/llama-4-scout-17b-16e-instruct"      # Groq, sub-second validation
 
 # ── Room password (WebSocket) ─────────────────────────────────────
@@ -144,8 +144,12 @@ Pick N Quizbowl topics in the subject. For each, list around 2 facts — ideally
 they should NOT be common knowledge. Order doesn't matter; the writer arranges them.
 Avoid any names in the "DO NOT pick" list.
 
+If the topic has well-known alternate names (transliterations, initials, pen names,
+common abbreviations), add one ALIASES line listing them. Omit if none are established.
+
 ### Example
 TOPIC: Leo Tolstoy
+ALIASES: Lev Nikolayevich Tolstoy; Lev Tolstoy
 FACTS:
 - 1901 excommunication by the Russian Orthodox Holy Synod after publishing "Resurrection"
 - Created Konstantin Levin, who proposes to Kitty by writing the first letters of words in chalk
@@ -155,6 +159,7 @@ FACTS:
 Repeat the block N times. No preamble.
 
 TOPIC: <name>
+ALIASES: <alias1>; <alias2>  ← omit entire line if none
 FACTS:
 - <fact>
 - <fact>
@@ -178,8 +183,9 @@ If a "DO NOT pick" list is given, avoid those names and their aliases.
   with it makes the first clue trivially buzzable.
 
 ### Answer line
-List every common alternate name in square brackets, separated by "; or".
-If no alternates exist, omit the brackets.
+List established alternate names — pen names, transliterations, initials, medical
+eponyms, common abbreviations. Be generous but accurate; don't fabricate.
+Separate with "; or". Omit brackets entirely if none apply.
 - "Mark Twain [or Samuel Clemens]"
 - "Knuth–Morris–Pratt algorithm [or KMP]"
 
@@ -209,8 +215,10 @@ the giveaway.
   with it makes the first clue trivially buzzable.
 
 ### Answer line
-List every common alternate name in square brackets, separated by "; or".
-If no alternates exist, omit the brackets.
+Use aliases listed in ALIASES (if provided) and any other established alternates
+you know — pen names, transliterations, initials, medical eponyms, abbreviations.
+Be generous but accurate; don't fabricate names.
+Separate with "; or". Omit brackets entirely if none apply.
 - "Mark Twain [or Samuel Clemens]"
 - "Knuth–Morris–Pratt algorithm [or KMP]"
 
@@ -256,9 +264,9 @@ class Brain:
         Returns (response, model_actually_used).
 
         Fallback chain:
-          MODEL_WRITER_FAST  → MODEL_FALLBACK   (Scout quota → 70B on Groq)
-          MODEL_WRITER_SLOW  → MODEL_FALLBACK   (Gemini RPM → 70B on Groq)
-          MODEL_ARCHITECT    → MODEL_FALLBACK   (Gemini RPM → 70B on Groq)
+          MODEL_WRITER_FAST  → MODEL_FALLBACK   (70B quota → Scout on Groq)
+          MODEL_WRITER_SLOW  → MODEL_FALLBACK   (Gemini RPM → Scout on Groq)
+          MODEL_ARCHITECT    → MODEL_FALLBACK   (Gemini RPM → Scout on Groq)
 
         Groq does not support reasoning_effort — strip it when falling back
         from a Gemini model.
@@ -322,9 +330,16 @@ class Brain:
         for part in text.split("TOPIC:")[1:]:
             lines = part.split("\n")
             name = lines[0].strip()
-            facts = [line.strip("- ").strip() for line in lines[1:] if line.strip().startswith("-")]
+            aliases = ""
+            facts = []
+            for line in lines[1:]:
+                ls = line.strip()
+                if ls.upper().startswith("ALIASES:"):
+                    aliases = ls.split(":", 1)[1].strip()
+                elif ls.startswith("-"):
+                    facts.append(ls.strip("- ").strip())
             if name:
-                topics.append({"name": name, "facts": "\n".join(facts)})
+                topics.append({"name": name, "aliases": aliases, "facts": "\n".join(facts)})
         return topics
 
     async def generate_topic_and_clue(self, general_topic: str, avoid: Optional[List[str]] = None,
@@ -360,8 +375,9 @@ class Brain:
                                         model: str = MODEL_WRITER_SLOW):
         """Steady-state writer: turn architect's topic+facts into a tossup.
         Returns (primary_answer, aliases, clue) or (None, None, None)."""
+        aliases_line = f"\nALIASES: {topic_data['aliases']}" if topic_data.get('aliases') else ""
         user_msg = (
-            f"TOPIC: {topic_data['name']}\nFACTS:\n{topic_data['facts']}"
+            f"TOPIC: {topic_data['name']}{aliases_line}\nFACTS:\n{topic_data['facts']}"
             f"{self._avoid_block(avoid)}"
         )
         response, used = await self._chat(
