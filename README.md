@@ -1,17 +1,17 @@
 # qbowl-gen
 
-Inspired by ProtoBowl and Qbreader, this is an AI-powered Quizbowl engine that generates pyramidal clues in real-time.
+Inspired by ProtoBowl and Qbreader. Fast, infinite quizbowl tossup generation via LLMs.
 
 ## Architecture
 
 - **Tiered AI Pipeline**:
-    - **Architect**: A high-capability model providing grounded, obscure facts.
-    - **Writer**: A smaller, faster model that transforms Architect fact-sheets into pyramidal clues, ensuring high responsiveness.
-    - **Judge**: A two-stage system (token-set matching $\rightarrow$ LLM semantic check) for fast, accurate validation.
-- **Responsiveness & Pipeline**:
-    - **Bootstrap**: The Writer generates the first few clues independently so the game starts instantly.
-    - **Steady State**: The Architect generates batches of 3 ideas and facts in parallel with the Writer, filling a pre-generation queue.
-    - **Fallback**: If the queue is exhausted, the fast Writer generates clues directly to prevent latency.
+    - **Architect**: High-capability model providing grounded, obscure facts.
+    - **Writer**: Smaller, faster model that transforms Architect fact-sheets into pyramidal clues for near-instant delivery.
+    - **Judge**: Two-stage system (token-set matching $\rightarrow$ LLM semantic check) for accurate validation.
+- **Pipeline Logic**:
+    - **Bootstrap**: Writer generates the first few clues independently so the game starts without delay.
+    - **Steady State**: Architect generates batches of 3 ideas and facts in parallel with the Writer to fill a pre-generation queue.
+    - **Fallback**: If the queue is exhausted, the fast Writer generates clues directly to prevent buffering.
 - **Model Fallbacks**: Sequential fallback chains to maintain availability during API rate limits.
 
 ## Running Locally
