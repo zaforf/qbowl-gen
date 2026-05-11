@@ -741,8 +741,12 @@ function handleMessage({ data }) {
             isBuzzer = (msg.winner === clientId);
             if (currentCard) setCardState(currentCard, 'locked', `${msg.winner} answering`);
             action(isBuzzer ? 'answer' : 'waiting', { who: msg.winner });
-        } else if (msg.phase === 'revealed' || msg.phase === 'loading') {
+        } else if (msg.phase === 'revealed') {
+            state = 'revealed';
             action('next');
+        } else if (msg.phase === 'loading') {
+            state = 'loading';
+            action('loading');
         }
 
         // Resume an active timer countdown
