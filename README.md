@@ -1,17 +1,17 @@
 # qbowl-gen
 
-Fast, infinite quizbowl tossup generation via LLMs inspired by protobowl and Qbreader.
+Fast, infinite tossup generation on any topic via LLMs, inspired by Protobowl and Qbreader.
 
 ## Architecture
 
 - **Tiered AI Pipeline**:
     - **Architect**: High-capability model providing grounded, obscure facts.
     - **Writer**: Smaller, faster model that transforms Architect fact-sheets into pyramidal clues for fast delivery.
-    - **Judge**: Two-stage system (token-set matching $\rightarrow$ LLM semantic check) for accurate validation.
+    - **Judge**: Two-stage system (word-set matching before semantic check) for accurate validation.
 - **Pipeline Logic**:
     - **Bootstrap**: Writer generates the first few clues independently so the game starts without delay.
     - **Steady State**: Architect generates batches of 3 ideas and facts in parallel with the Writer to fill a pre-generation queue.
-    - **Fallback**: If the queue is exhausted, the fast Writer generates clues directly to prevent buffering.
+    - **Fallback**: If the queue nears exhaustion, the fast Writer generates clues directly to prevent buffering.
 - **Model Fallbacks**: Sequential fallback chains to maintain availability during API rate limits.
 
 ## Running Locally
